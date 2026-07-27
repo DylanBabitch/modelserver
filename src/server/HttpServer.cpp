@@ -1,11 +1,15 @@
 #include "server/HttpServer.hpp"
-#include "crow.h"
+#include <crow.h>
 
 void HttpServer::run(){
     crow::SimpleApp app;
-
-    CROW_ROUTE(app, "/")
+    //const crow::request &req
+    CROW_ROUTE(app, "/health")
     ([](){
-        return crow::json()
-    })
+        crow::json::wvalue x;
+        x["status"] = "ok";
+        return x;
+    });
+    
+    app.port(8080).run();
 }

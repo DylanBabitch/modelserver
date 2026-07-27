@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/dylan/modelserver/build/cmake_install.cmake",
-		"/home/dylan/modelserver/build/external/crow/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
