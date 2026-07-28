@@ -10,11 +10,13 @@ PredictionResponse DummyRuntime::dummyRun(PredictionRequest& pReq){
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> distr(0, 1);
+    std::uniform_real_distribution<double> distr(0, 10);
+    
 
-    double confidence = distr(gen);
+    double confidence = distr(gen) / 10;
+    double latency = distr(gen);
 
-    PredictionResponse p{pReq.model, pReq.version, "dummy response", confidence, 0.0};
+    PredictionResponse p{pReq.model, pReq.version, "dummy response", confidence, latency};
 
     return p;
 }
