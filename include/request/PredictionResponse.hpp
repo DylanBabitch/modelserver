@@ -2,7 +2,7 @@
 
 #include <string>
 
-struct PredicitonResponse{
+struct PredictionResponse{
     std::string model;
     std::string version;
     std::string prediciton;

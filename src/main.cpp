@@ -3,6 +3,7 @@
 #include "server/HttpServer.hpp"
 
 int main(){
-    HttpServer::run();
+    HttpServer h;
+    h.run();
     return 0;
 }

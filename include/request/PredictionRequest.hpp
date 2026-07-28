@@ -2,7 +2,7 @@
 
 #include <string>
 
-struct PredicitionRequest {
+struct PredictionRequest {
     std::string model;
     std::string version;
     std::string input;

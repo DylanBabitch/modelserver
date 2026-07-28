@@ -21,6 +21,8 @@ add_executable(modelserver
     src/model/ModelRegistry.cpp
 
     src/server/HttpServer.cpp
+
+    src/helpers/helpers.cpp
 )
 
 target_include_directories(modelserver PRIVATE
