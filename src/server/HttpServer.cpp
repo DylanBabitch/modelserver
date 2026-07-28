@@ -5,12 +5,16 @@
 #include <crow.h>
 #include <string>
 
+HttpServer::HttpServer(ModelRegistry* registry){
+    this->registry = registry;
+}
+
 void HttpServer::run(){
     crow::SimpleApp app;
-    ModelRegistry registry;
 
     this->registerHealthRoute(app);
     this->registerPredictRoute(app);
+    this->registerModelRegisterRoute(app);
     
     app.port(8080).run();
 }
@@ -33,13 +37,30 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
     ([this](crow::request& req, crow::response& res){
         crow::json::rvalue req_data = crow::json::load(req.body); 
 
+        //make sure request is well formatted
         crow::response valid_request = this->checkPrediction(req_data);
         if(valid_request.code != 200){
-            return valid_request;
+            res = std::move(valid_request);
+            res.end();
+            return;
+        }
+        
+        //make sure model and version exists;
+        std::string model = req_data["model"].s();
+        std::string version = req_data["version"].s();
+        if(!this->registry->checkModel(model)){
+            res.code = 400;
+            res.body = "Error: Model not registered\n";
+            res.end();
+            return;
+        } else if(!this->registry->checkVersion(model, version)){
+            res.code = 400;
+            res.body = "Error: Version not registered\n";
+            res.end();
+            return;
         }
 
-
-        PredictionRequest pReq = {req_data["model"].s(), req_data["version"].s(), req_data["input"].s()};
+        PredictionRequest pReq = {model, version, req_data["input"].s()};
         PredictionResponse pResp = DummyRuntime::dummyRun(pReq);
         crow::json::wvalue x;
         x["model"] = pResp.model;
@@ -55,31 +76,42 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
 }
 
 void HttpServer::registerModelRoute(crow::SimpleApp& app){
+    //TODO add /models route
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
-        return crow::response(404, "Not added yet");
+        res.code = 404;
+        res.body = "Route not added yet";
+        res.end();
     });
 }
 
-void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app, ModelRegistry& registry){
+void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
     //TODO add path and runtime to request
-    CROW_ROUTE(app, "models/register").methods(crow::HTTPMethod::POST)
-    ([this, registry](crow::request& req, crow::response& res){
+    CROW_ROUTE(app, "/models/register").methods(crow::HTTPMethod::POST)
+    ([this](crow::request& req, crow::response& res){
         crow::json::rvalue req_data = crow::json::load(req.body);
 
         //check the request formatting
         crow::response formatCheck = this->checkModelRegister(req_data);
-        if(formatCheck.code != 200) return formatCheck;
+        if(formatCheck.code != 200){
+            res = std::move(formatCheck);
+            res.end();
+            return;
+        }
 
         std::string name = req_data["name"].s();
         std::string version = req_data["version"].s();
 
-        //check if model exists
-        if(registry.checkVersion(name, version)){
-            
-        }
-
         //register model
+        if(!this->registry->addModel(name, version)){
+            res.code = 400;
+            res.body = "Model already added\n";
+            res.end();
+            return;
+        }
+        res.code = 200;
+        res.body = "Model Added Sucessfully\n";
+        res.end();
     });
 }
 
@@ -106,6 +138,7 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& req_data){
     } else if(req_data["input"].t() != crow::json::type::String){
         return crow::response(400, "Field 'model' must be a string");
     }
+
 
     return crow::response(200, "Well Formatted");
 }
