@@ -1,0 +1,1 @@
+./build/modelserver_tests

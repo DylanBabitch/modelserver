@@ -11,6 +11,8 @@ set(CROW_BUILD_TESTS OFF)
 
 add_subdirectory(external/crow)
 
+add_subdirectory(external/gtest)
+
 add_executable(modelserver
     src/main.cpp
 
@@ -38,3 +40,24 @@ target_compile_options(modelserver PRIVATE
     -Wextra
     -Wpedantic
 )
+
+enable_testing()
+
+add_executable(modelserver_tests
+    tests/metrics_tests.cpp
+    tests/model_registry_tests.cpp
+
+    src/metrics/MetricsRegistry.cpp
+    src/model/ModelRegistry.cpp
+)
+
+target_include_directories(modelserver_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(modelserver_tests PRIVATE
+    GTest::gtest_main
+)
+
+include(GoogleTest)
+gtest_discover_tests(modelserver_tests)

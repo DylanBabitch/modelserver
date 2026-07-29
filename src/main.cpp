@@ -2,10 +2,12 @@
 #include "crow.h"
 #include "server/HttpServer.hpp"
 #include "model/ModelRegistry.hpp"
+#include "metrics/MetricsRegistry.hpp"
 
 int main(){
-    ModelRegistry reg;
-    HttpServer h(&reg);
+    ModelRegistry modelReg;
+    MetricsRegistry metricReg;
+    HttpServer h(&modelReg, &metricReg);
     h.run();
     return 0;
 }

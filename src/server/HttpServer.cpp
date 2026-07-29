@@ -2,11 +2,13 @@
 #include "request/PredictionRequest.hpp"
 #include "model/DummyRuntime.hpp"
 #include "model/ModelRegistry.hpp"
+#include "metrics/Timer.hpp"
 #include <crow.h>
 #include <string>
 
-HttpServer::HttpServer(ModelRegistry* registry){
-    this->registry = registry;
+HttpServer::HttpServer(ModelRegistry* modelRegistry, MetricsRegistry* metricsRegistry){
+    this->modelRegistry = modelRegistry;
+    this->metricsRegistry = metricsRegistry;
 }
 
 void HttpServer::run(){
@@ -15,6 +17,7 @@ void HttpServer::run(){
     this->registerHealthRoute(app);
     this->registerPredictRoute(app);
     this->registerModelRegisterRoute(app);
+    this->registerMetricsRoute(app);
     
     app.port(8080).run();
 }
@@ -35,28 +38,34 @@ void HttpServer::registerHealthRoute(crow::SimpleApp& app){
 void HttpServer::registerPredictRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/predict").methods(crow::HTTPMethod::POST)
     ([this](crow::request& req, crow::response& res){
+        Timer t;
         crow::json::rvalue req_data = crow::json::load(req.body); 
+    
+        metricsRegistry->addActiveRequest();
 
         //make sure request is well formatted
         crow::response valid_request = this->checkPrediction(req_data);
         if(valid_request.code != 200){
             res = std::move(valid_request);
             res.end();
+            metricsRegistry->addFailedRequest();
             return;
         }
         
         //make sure model and version exists;
         std::string model = req_data["model"].s();
         std::string version = req_data["version"].s();
-        if(!this->registry->checkModel(model)){
+        if(!this->modelRegistry->checkModel(model)){
             res.code = 400;
             res.body = "Error: Model not registered\n";
             res.end();
+            metricsRegistry->addFailedRequest();
             return;
-        } else if(!this->registry->checkVersion(model, version)){
+        } else if(!this->modelRegistry->checkVersion(model, version)){
             res.code = 400;
             res.body = "Error: Version not registered\n";
             res.end();
+            metricsRegistry->addFailedRequest();
             return;
         }
 
@@ -67,11 +76,19 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         x["version"] = pResp.version;
         x["prediction"] = pResp.prediciton;
         x["confidence"] = pResp.confidence;
-        x["latency_ms"] = pResp.latency_ms;
+        x["inference_latency_ms"] = pResp.latency_ms;
+
+        metricsRegistry->addInferenceLatency(pResp.latency_ms);
+
+        double req_latency = t.end();
+        x["request_latency_ms"] = req_latency;
+        metricsRegistry->addPrediction(req_latency);
+        metricsRegistry->addSuccessfulRequest();
 
         res.body = x.dump() + "\n";
         res.add_header("Content_Type", "application/json");
         res.end();
+        
     });
 }
 
@@ -79,8 +96,29 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
     //TODO add /models route
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
-        res.code = 404;
-        res.body = "Route not added yet";
+        crow::json::wvalue x;
+        
+    });
+}
+
+void HttpServer::registerMetricsRoute(crow::SimpleApp& app){
+    CROW_ROUTE(app, "/metrics")
+    ([this](crow::response& res){
+        crow::json::wvalue x;
+        x["total_reqs"] = this->metricsRegistry->getRequestsTotal();
+        x["successful_reqs"] = this->metricsRegistry->getRequestsSuccessful();
+        x["failed_reqs"] = this->metricsRegistry->getRequestsFailed();
+        x["average_request_latency"] = this->metricsRegistry->getAverageRequestLatency();
+        x["average_inference_latency"] = this->metricsRegistry->getAverageInferenceLatency();
+        auto [req_p50_latency, infer_p50_latency] = this->metricsRegistry->getP50Latency();
+        auto [req_p95_latency, infer_p95_latency] = this->metricsRegistry->getP95Latency();
+        x["request_p50_latency"] = req_p50_latency;
+        x["request_p95_latency"] = req_p95_latency;
+        x["inference_p50_latency"] = infer_p50_latency;
+        x["inference_p95_latency"] = infer_p95_latency;
+
+        res.body = x.dump() + "\n";
+        res.add_header("Content_Type", "application/json");
         res.end();
     });
 }
@@ -103,12 +141,13 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
         std::string version = req_data["version"].s();
 
         //register model
-        if(!this->registry->addModel(name, version)){
+        if(!this->modelRegistry->addModel(name, version)){
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
             return;
         }
+        metricsRegistry->addRegisteredModel();
         res.code = 200;
         res.body = "Model Added Sucessfully\n";
         res.end();
