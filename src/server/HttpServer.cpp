@@ -5,6 +5,8 @@
 #include "metrics/Timer.hpp"
 #include <crow.h>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 HttpServer::HttpServer(ModelRegistry* modelRegistry, MetricsRegistry* metricsRegistry){
     this->modelRegistry = modelRegistry;
@@ -18,6 +20,7 @@ void HttpServer::run(){
     this->registerPredictRoute(app);
     this->registerModelRegisterRoute(app);
     this->registerMetricsRoute(app);
+    this->registerModelRoute(app);
     
     app.port(8080).run();
 }
@@ -93,11 +96,23 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
 }
 
 void HttpServer::registerModelRoute(crow::SimpleApp& app){
-    //TODO add /models route
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        
+        std::unordered_map<std::string, std::vector<std::string>>& availableModels = this->modelRegistry->getAvailableModels();
+        std::vector<crow::json::wvalue> modelOutput;
+        modelOutput.reserve(availableModels.size());
+        for(auto& [model, versions] : availableModels){
+            crow::json::wvalue temp;
+            temp["name"] = model;
+            temp["versions"] = versions;
+            modelOutput.push_back(temp);
+        }
+        x["models"] = std::move(modelOutput);
+
+        res.body = x.dump() + "\n";
+        res.add_header("Content_Type", "application/json");
+        res.end();
     });
 }
 

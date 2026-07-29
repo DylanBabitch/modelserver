@@ -21,6 +21,6 @@ bool ModelRegistry::addModel(std::string modelName, std::string version){
     return true;
 }
 
-std::unordered_map<std::string, std::vector<std::string>>& ModelRegistry::availableModels(){
-
+std::unordered_map<std::string, std::vector<std::string>>& ModelRegistry::getAvailableModels(){
+    return availableModels;
 }

@@ -10,5 +10,5 @@ public:
     bool addModel(std::string modelName, std::string version);
     bool checkModel(std::string modelName);
     bool checkVersion(std::string modelName, std::string version);
-    std::unordered_map<std::string, std::vector<std::string>>& availableModels();
+    std::unordered_map<std::string, std::vector<std::string>>& getAvailableModels();
 };
