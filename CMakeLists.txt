@@ -24,7 +24,8 @@ add_executable(modelserver
 
     src/server/HttpServer.cpp
 
-    src/helpers/helpers.cpp
+    src/scheduler/WorkerPool.cpp
+    src/scheduler/RequestQueue.cpp
 )
 
 target_include_directories(modelserver PRIVATE
