@@ -14,12 +14,12 @@ private:
     std::condition_variable cv;
     std::queue<QueuedRequest> requests;
     uint32_t currId = 0;
-    bool shutdown = false;
+    std::atomic<bool> shutdown = false;
 public:
     void push(PredictionRequest request, std::chrono::steady_clock::time_point creationTime);
     std::optional<QueuedRequest> pop();
     size_t size() const;
     bool empty() const;
     void setShutdown();
-    bool isShutdown() const;
+    inline bool isShutdown() const;
 };

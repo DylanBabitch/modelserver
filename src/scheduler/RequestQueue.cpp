@@ -50,8 +50,7 @@ void RequestQueue::setShutdown(){
     cv.notify_all();
 }
 
-bool RequestQueue::isShutdown() const{
-    std::lock_guard<std::mutex> lock(mtx);
+inline bool RequestQueue::isShutdown() const{
     return shutdown;
 }
 

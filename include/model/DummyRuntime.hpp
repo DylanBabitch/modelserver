@@ -7,5 +7,5 @@
 
 class DummyRuntime : public ModelRuntime{
 public:
-    static PredictionResponse dummyRun(PredictionRequest& pReq);
+    PredictionResponse predict(const PredictionRequest& request) override;
 };

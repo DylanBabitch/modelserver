@@ -72,8 +72,8 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
             return;
         }
 
-        PredictionRequest pReq = {model, version, req_data["input"].s()};
-        PredictionResponse pResp = DummyRuntime::dummyRun(pReq);
+        ModelInfo& runtimeInfo = modelRegistry->getRuntimeInfo(model, version);
+        PredictionResponse pResp = runtimeInfo.runtime.predict(PredictionRequest(model, version, req_data["input"].s()));
         crow::json::wvalue x;
         x["model"] = pResp.model;
         x["version"] = pResp.version;
@@ -99,13 +99,18 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        std::unordered_map<std::string, std::vector<std::string>>& availableModels = this->modelRegistry->getAvailableModels();
+        std::unordered_map<std::string, std::vector<ModelInfo>>& availableModels = this->modelRegistry->getAvailableModels();
         std::vector<crow::json::wvalue> modelOutput;
         modelOutput.reserve(availableModels.size());
-        for(auto& [model, versions] : availableModels){
+        for(auto& [modelName, models] : availableModels){
             crow::json::wvalue temp;
-            temp["name"] = model;
-            temp["versions"] = versions;
+            temp["name"] = modelName;
+            std::vector<std::string> modelVersions;
+            modelVersions.reserve(models.size());
+            for(ModelInfo& model : models){
+                modelVersions.push_back(model.modelVersion);
+            }
+            temp["versions"] = modelVersions;
             modelOutput.push_back(temp);
         }
         x["models"] = std::move(modelOutput);
@@ -154,9 +159,12 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
 
         std::string name = req_data["name"].s();
         std::string version = req_data["version"].s();
+        std::string path = "dummypath/"; //make this a real path
+        DummyRuntime d;
+
 
         //register model
-        if(!this->modelRegistry->addModel(name, version)){
+        if(!this->modelRegistry->addModel(name, version, path, d)){
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
