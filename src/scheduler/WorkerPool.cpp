@@ -11,8 +11,8 @@ WorkerPool::WorkerPool(std::size_t numWorkers, RequestQueue* reqQueue, ModelRegi
 
 void WorkerPool::start(){
     //creating thread
-    for(int i = 0; i < workerCount; ++i){
-        workers.emplace_back(workerLoop, i);
+    for(std::size_t i = 0; i < workerCount; ++i){
+        workers.emplace_back(&WorkerPool::workerLoop, this, i);
     }
 }
 
@@ -33,7 +33,7 @@ void WorkerPool::workerLoop(int workerId){
             return;
         }
 
-        nextReq->status = RequestStatus::Running;
+        nextReq->status = QueuedRequest::RequestStatus::Running;
 
         //process the request
         std::string model = nextReq->request.model;
@@ -44,9 +44,8 @@ void WorkerPool::workerLoop(int workerId){
             //model doesn't exist, idk waht to do yet
         }
 
-        ModelInfo& modelInfo = modelReg->getRuntimeInfo(model, version);
-        ModelRuntime& runtime = modelInfo.runtime;
+        ModelRuntime* modelRuntime = modelReg->getRuntime(model, version);
         
-        nextReq->resultPromise.set_value(runtime.predict(nextReq->request));
+        nextReq->resultPromise.set_value(modelRuntime->predict(nextReq->request));
     }
 }

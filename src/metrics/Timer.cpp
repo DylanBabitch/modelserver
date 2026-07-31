@@ -1,11 +1,9 @@
 #include "metrics/Timer.hpp"
-#include <chrono>
-
 Timer::Timer(){
-    start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::steady_clock::now();
 }
 
-double Timer::end(){
-    std::chrono::duration<double> duration = std::chrono::high_resolution_clock::now() - start_time;
+double Timer::end() const{
+    std::chrono::duration<double, std::milli> duration = std::chrono::steady_clock::now() - start_time;
     return duration.count();
 }

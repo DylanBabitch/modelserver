@@ -7,15 +7,17 @@
 #include <string>
 #include <optional>
 
-enum RequestStatus{
-    Queued,
-    Running,
-    Completed,
-    Failed,
-    Cancelled
-};
+
 
 struct QueuedRequest {
+    enum RequestStatus{
+        Queued,
+        Running,
+        Completed,
+        Failed,
+        Cancelled
+    };
+
     using Clock = std::chrono::steady_clock;
 
     std::uint64_t requestId = 0;
