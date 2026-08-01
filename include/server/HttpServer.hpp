@@ -4,8 +4,11 @@
 #include "metrics/MetricsRegistry.hpp"
 
 class HttpServer{
-    ModelRegistry* modelRegistry;
-    MetricsRegistry* metricsRegistry;
+    ModelRegistry* modelReg;
+    MetricsRegistry* metricsReg;
+    RequestQueue* reqQueue;
+    WorkerPool* workerPool;
+    std::uint8_t numThreads;
     crow::response checkPrediction(crow::json::rvalue& req_data);
     crow::response checkModelRegister(crow::json::rvalue& req_data);
     void registerHealthRoute(crow::SimpleApp& app);
@@ -14,6 +17,7 @@ class HttpServer{
     void registerModelRegisterRoute(crow::SimpleApp& app);
     void registerMetricsRoute(crow::SimpleApp& app);
 public:
-    HttpServer(ModelRegistry* modelRegistry, MetricsRegistry* metricsRegistry);
+    HttpServer(uint8_t numThreads = std::thread::hardware_concurrency());
+    ~HttpServer();
     void run();
 };

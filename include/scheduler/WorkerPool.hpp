@@ -8,24 +8,27 @@
 #include <cstddef>
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 class WorkerPool{
 private:
     RequestQueue* reqQueue;
     ModelRegistry* modelReg;
-    MetricsRegistry* metricsReg;
 
     std::size_t workerCount;
     std::vector<std::thread> workers;
 
     std::atomic<bool> shutdown = false;
+    bool started = false;
 
-    void workerLoop(int workerId);
+    std::mutex mtx;
+
+    void workerLoop();
 public:
-    WorkerPool(std::size_t numWorkers, RequestQueue* reqQueue, ModelRegistry* modelReg, MetricsRegistry* metricsReg);
+    WorkerPool(std::size_t numWorkers, RequestQueue* reqQueue, ModelRegistry* modelReg);
+    ~WorkerPool();
     void start();
     void stop();
 
-    bool isRunning() const;
-    std::size_t size();
+    std::size_t totalWorkers() const;
 };

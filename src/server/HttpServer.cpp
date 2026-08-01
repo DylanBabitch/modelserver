@@ -1,16 +1,29 @@
 #include "server/HttpServer.hpp"
 #include "request/PredictionRequest.hpp"
-#include "model/DummyRuntime.hpp"
 #include "model/ModelRegistry.hpp"
 #include "metrics/Timer.hpp"
+#include "scheduler/RequestQueue.hpp"
+#include "scheduler/WorkerPool.hpp"
+#include "model/DummyRuntime.hpp"
+
 #include <crow.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
-HttpServer::HttpServer(ModelRegistry* modelRegistry, MetricsRegistry* metricsRegistry){
-    this->modelRegistry = modelRegistry;
-    this->metricsRegistry = metricsRegistry;
+HttpServer::HttpServer(uint8_t numThreads = std::thread::hardware_concurrency()) : numThreads(numThreads){
+    this->modelReg = new ModelRegistry();
+    this->metricsReg = new MetricsRegistry();
+    this->reqQueue = new RequestQueue();
+    this->workerPool = new WorkerPool(numThreads, reqQueue, modelReg);
+}
+
+HttpServer::~HttpServer(){
+    delete modelReg;
+    delete metricsReg;
+    delete reqQueue;
+    delete workerPool;
 }
 
 void HttpServer::run(){
@@ -32,7 +45,7 @@ void HttpServer::registerHealthRoute(crow::SimpleApp& app){
         x["status"] = "ok";
 
         res.body = x.dump() + "\n";
-        res.add_header("Content_Type", "application/json");
+        res.add_header("Content-Type", "application/json");
         res.add_header("Cache-Control", "no-store");
         res.end();
     });
@@ -44,52 +57,64 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         Timer t;
         crow::json::rvalue req_data = crow::json::load(req.body); 
     
-        metricsRegistry->addActiveRequest();
+        metricsReg->addActiveRequest();
 
         //make sure request is well formatted
         crow::response valid_request = this->checkPrediction(req_data);
         if(valid_request.code != 200){
             res = std::move(valid_request);
             res.end();
-            metricsRegistry->addFailedRequest();
+            metricsReg->addFailedRequest();
             return;
         }
         
         //make sure model and version exists;
         std::string model = req_data["model"].s();
         std::string version = req_data["version"].s();
-        if(!this->modelRegistry->checkModel(model)){
+        if(!this->modelReg->checkModel(model)){
             res.code = 400;
             res.body = "Error: Model not registered\n";
             res.end();
-            metricsRegistry->addFailedRequest();
+            metricsReg->addFailedRequest();
             return;
-        } else if(!this->modelRegistry->checkVersion(model, version)){
+        } else if(!this->modelReg->checkVersion(model, version)){
             res.code = 400;
             res.body = "Error: Version not registered\n";
             res.end();
-            metricsRegistry->addFailedRequest();
+            metricsReg->addFailedRequest();
             return;
         }
 
-        ModelInfo& runtimeInfo = modelRegistry->getRuntimeInfo(model, version);
-        PredictionResponse pResp = runtimeInfo.runtime.predict(PredictionRequest(model, version, req_data["input"].s()));
+        ModelRuntime* runtime = modelReg->getRuntime(model, version);
         crow::json::wvalue x;
-        x["model"] = pResp.model;
-        x["version"] = pResp.version;
-        x["prediction"] = pResp.prediciton;
-        x["confidence"] = pResp.confidence;
-        x["inference_latency_ms"] = pResp.latency_ms;
+        if(!runtime){
+            x["error"] = "Runtime does not exist";
+            metricsReg->addFailedRequest();
+            res.code = 400;
+        }else{
+            PredictionResponse pResp = runtime->predict(PredictionRequest(model, version, req_data["input"].s()));
+            x["model"] = pResp.model;
+            x["version"] = pResp.version;
+            x["prediction"] = pResp.prediction;
+            x["confidence"] = pResp.confidence;
+            x["inference_latency_ms"] = pResp.latency_ms;
 
-        metricsRegistry->addInferenceLatency(pResp.latency_ms);
+            metricsReg->addInferenceLatency(pResp.latency_ms);
 
-        double req_latency = t.end();
-        x["request_latency_ms"] = req_latency;
-        metricsRegistry->addPrediction(req_latency);
-        metricsRegistry->addSuccessfulRequest();
+            double req_latency = t.end();
+            x["request_latency_ms"] = req_latency;
+            metricsReg->addPrediction(req_latency);
+            metricsReg->addSuccessfulRequest();
+            res.code = 200;
+        }
+        
+
+        
+
+        
 
         res.body = x.dump() + "\n";
-        res.add_header("Content_Type", "application/json");
+        res.add_header("Content-Type", "application/json");
         res.end();
         
     });
@@ -99,7 +124,7 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        std::unordered_map<std::string, std::vector<ModelInfo>>& availableModels = this->modelRegistry->getAvailableModels();
+        const std::unordered_map<std::string, std::vector<ModelInfo>>& availableModels = this->modelReg->getAvailableModels();
         std::vector<crow::json::wvalue> modelOutput;
         modelOutput.reserve(availableModels.size());
         for(auto& [modelName, models] : availableModels){
@@ -107,7 +132,7 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
             temp["name"] = modelName;
             std::vector<std::string> modelVersions;
             modelVersions.reserve(models.size());
-            for(ModelInfo& model : models){
+            for(const ModelInfo& model : models){
                 modelVersions.push_back(model.modelVersion);
             }
             temp["versions"] = modelVersions;
@@ -116,7 +141,7 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
         x["models"] = std::move(modelOutput);
 
         res.body = x.dump() + "\n";
-        res.add_header("Content_Type", "application/json");
+        res.add_header("Content-Type", "application/json");
         res.end();
     });
 }
@@ -125,20 +150,20 @@ void HttpServer::registerMetricsRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/metrics")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        x["total_reqs"] = this->metricsRegistry->getRequestsTotal();
-        x["successful_reqs"] = this->metricsRegistry->getRequestsSuccessful();
-        x["failed_reqs"] = this->metricsRegistry->getRequestsFailed();
-        x["average_request_latency"] = this->metricsRegistry->getAverageRequestLatency();
-        x["average_inference_latency"] = this->metricsRegistry->getAverageInferenceLatency();
-        auto [req_p50_latency, infer_p50_latency] = this->metricsRegistry->getP50Latency();
-        auto [req_p95_latency, infer_p95_latency] = this->metricsRegistry->getP95Latency();
+        x["total_reqs"] = this->metricsReg->getRequestsTotal();
+        x["successful_reqs"] = this->metricsReg->getRequestsSuccessful();
+        x["failed_reqs"] = this->metricsReg->getRequestsFailed();
+        x["average_request_latency"] = this->metricsReg->getAverageRequestLatency();
+        x["average_inference_latency"] = this->metricsReg->getAverageInferenceLatency();
+        auto [req_p50_latency, infer_p50_latency] = this->metricsReg->getP50Latency();
+        auto [req_p95_latency, infer_p95_latency] = this->metricsReg->getP95Latency();
         x["request_p50_latency"] = req_p50_latency;
         x["request_p95_latency"] = req_p95_latency;
         x["inference_p50_latency"] = infer_p50_latency;
         x["inference_p95_latency"] = infer_p95_latency;
 
         res.body = x.dump() + "\n";
-        res.add_header("Content_Type", "application/json");
+        res.add_header("Content-Type", "application/json");
         res.end();
     });
 }
@@ -160,19 +185,18 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
         std::string name = req_data["name"].s();
         std::string version = req_data["version"].s();
         std::string path = "dummypath/"; //make this a real path
-        DummyRuntime d;
-
+        auto dummyRuntime = std::make_unique<DummyRuntime>();
 
         //register model
-        if(!this->modelRegistry->addModel(name, version, path, d)){
+        if(!this->modelReg->addModel(name, version, path, std::move(dummyRuntime))){
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
             return;
         }
-        metricsRegistry->addRegisteredModel();
+        metricsReg->addRegisteredModel();
         res.code = 200;
-        res.body = "Model Added Sucessfully\n";
+        res.body = "Model Added Successfully\n";
         res.end();
     });
 }
@@ -196,9 +220,9 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& req_data){
     if(req_data["model"].t() != crow::json::type::String){
         return crow::response(400, "Field 'model' must be a string");
     } else if(req_data["version"].t() != crow::json::type::String){
-        return crow::response(400, "Field 'model' must be a string");
+        return crow::response(400, "Field 'version' must be a string");
     } else if(req_data["input"].t() != crow::json::type::String){
-        return crow::response(400, "Field 'model' must be a string");
+        return crow::response(400, "Field 'input' must be a string");
     }
 
 

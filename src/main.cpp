@@ -5,9 +5,9 @@
 #include "metrics/MetricsRegistry.hpp"
 
 int main(){
-    ModelRegistry modelReg;
-    MetricsRegistry metricReg;
-    HttpServer h(&modelReg, &metricReg);
+//     ModelRegistry modelReg;
+//     MetricsRegistry metricReg;
+    HttpServer h();
     h.run();
     return 0;
 }

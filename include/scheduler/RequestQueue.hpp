@@ -2,14 +2,8 @@
 #include "scheduler/QueuedRequest.hpp"
 #include "request/PredictionRequest.hpp"
 
+#include <cstddef>
 #include <queue>
-#include <chrono>
-#include <mutex>
-#include <condition_variable>
-#include <stdexcept>
-#include <future>
-#include <cstdint>
-#include <optional>
 
 class RequestQueue{
 private:
@@ -21,7 +15,7 @@ private:
 public:
     std::future<PredictionResponse> push(PredictionRequest request, std::chrono::steady_clock::time_point creationTime);
     std::optional<QueuedRequest> pop();
-    size_t size() const;
+    std::size_t size() const;
     bool empty() const;
     void setShutdown();
     bool isShutdown() const;

@@ -44,7 +44,7 @@ std::optional<QueuedRequest> RequestQueue::pop(){
     return request;
 }
 
-size_t RequestQueue::size() const{
+std::size_t RequestQueue::size() const{
     std::lock_guard<std::mutex> lock(mtx);
     return requests.size();
 
