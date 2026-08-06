@@ -6,7 +6,7 @@
 #include <thread>
 #include <mutex>
 
-WorkerPool::WorkerPool(std::size_t numWorkers, RequestQueue* reqQueue, ModelRegistry* modelReg){
+WorkerPool::WorkerPool(std::size_t numWorkers, std::shared_ptr<RequestQueue> reqQueue, std::shared_ptr<ModelRegistry> modelReg){
     if(numWorkers == 0){
         throw std::runtime_error("numWorkers must be at least 1");
     } else if(!reqQueue){
@@ -89,6 +89,6 @@ void WorkerPool::workerLoop(){
 }
 
 
-size_t WorkerPool::totalWorkers() const{
+std::size_t WorkerPool::totalWorkers() const{
     return workerCount;
 }

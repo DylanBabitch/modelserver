@@ -9,11 +9,12 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <memory>
 
 class WorkerPool{
 private:
-    RequestQueue* reqQueue;
-    ModelRegistry* modelReg;
+    std::shared_ptr<RequestQueue> reqQueue;
+    std::shared_ptr<ModelRegistry> modelReg;
 
     std::size_t workerCount;
     std::vector<std::thread> workers;
@@ -25,7 +26,7 @@ private:
 
     void workerLoop();
 public:
-    WorkerPool(std::size_t numWorkers, RequestQueue* reqQueue, ModelRegistry* modelReg);
+    WorkerPool(std::size_t numWorkers, std::shared_ptr<RequestQueue> reqQueue, std::shared_ptr<ModelRegistry> modelReg);
     ~WorkerPool();
     void start();
     void stop();

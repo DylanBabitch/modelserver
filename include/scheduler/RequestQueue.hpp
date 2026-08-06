@@ -4,6 +4,12 @@
 
 #include <cstddef>
 #include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <future>
+#include <optional>
+#include <chrono>
+#include <cstdint>
 
 class RequestQueue{
 private:
@@ -13,7 +19,7 @@ private:
     std::uint64_t currId = 0;
     bool shutdown = false;
 public:
-    std::future<PredictionResponse> push(PredictionRequest request, std::chrono::steady_clock::time_point creationTime);
+    std::future<PredictionResponse> push(PredictionRequest request);
     std::optional<QueuedRequest> pop();
     std::size_t size() const;
     bool empty() const;

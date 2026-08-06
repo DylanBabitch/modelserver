@@ -18,10 +18,10 @@ TEST(MetricsRegistryTest, StartsAtZero)
     auto [request_p50, inference_p50] = metrics.getP50Latency();
     auto [request_p95, inference_p95] = metrics.getP95Latency();
 
-    EXPECT_DOUBLE_EQ(request_p50, 0.0);
-    EXPECT_DOUBLE_EQ(inference_p50, 0.0);
-    EXPECT_DOUBLE_EQ(request_p95, 0.0);
-    EXPECT_DOUBLE_EQ(inference_p95, 0.0);
+    EXPECT_DOUBLE_EQ(request_p50, -1.0);
+    EXPECT_DOUBLE_EQ(inference_p50, -1.0);
+    EXPECT_DOUBLE_EQ(request_p95, -1.0);
+    EXPECT_DOUBLE_EQ(inference_p95, -1.0);
 }
 
 TEST(MetricsRegistryTest, RecordsSuccessfulRequest)

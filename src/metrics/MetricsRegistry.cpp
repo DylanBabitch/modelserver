@@ -76,7 +76,7 @@ double MetricsRegistry::getAverageInferenceLatency() const{
     return total_inference_latency / inference_latencies.size();
 }
 
-/**.
+/*
     Returns Request and Inference P50 Latencies in format {request latency, inference latency}. If there are no latencies for request and/or inference available, the function returns -1 for the respective latency.
  */
 std::pair<double, double> MetricsRegistry::getP50Latency() const{
@@ -135,7 +135,7 @@ std::pair<double, double> MetricsRegistry::getP95Latency() const{
 
     std::pair<double, double> p95Latencies; //{req latency, inference latency}
     if(req_lat.size() != 0){
-        int idx = static_cast<size_t>(std::ceil(0.95 * req_lat.size())) - 1;
+        std::size_t idx = static_cast<size_t>(std::ceil(0.95 * req_lat.size())) - 1;
         //get request latency
         std::nth_element(req_lat.begin(), req_lat.begin() + idx, req_lat.end());
         p95Latencies.first = req_lat[idx];
@@ -145,7 +145,7 @@ std::pair<double, double> MetricsRegistry::getP95Latency() const{
 
     //get inference latency
     if(infer_lat.size() != 0){
-        int idx = static_cast<size_t>(std::ceil(0.95 * infer_lat.size())) - 1;
+        std::size_t idx = static_cast<size_t>(std::ceil(0.95 * infer_lat.size())) - 1;
         std::nth_element(infer_lat.begin(), infer_lat.begin() + idx, infer_lat.end());
         p95Latencies.second = infer_lat[idx];
     }else{

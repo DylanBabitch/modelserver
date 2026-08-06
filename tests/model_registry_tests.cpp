@@ -1,5 +1,25 @@
 #include <gtest/gtest.h>
+
+#include <memory>
+
 #include "model/ModelRegistry.hpp"
+
+namespace {
+
+class TestRuntime final : public ModelRuntime {
+public:
+    PredictionResponse predict(const PredictionRequest&) override
+    {
+        return {};
+    }
+};
+
+std::unique_ptr<ModelRuntime> makeRuntime()
+{
+    return std::make_unique<TestRuntime>();
+}
+
+} // namespace
 
 TEST(ModelRegistryTest, StartsEmpty)
 {
@@ -13,7 +33,7 @@ TEST(ModelRegistryTest, AddModelCreatesModelAndVersion)
 {
     ModelRegistry registry;
 
-    bool added = registry.addModel("dummy mode", "v1");
+    bool added = registry.addModel("dummy mode", "v1", "test-path", makeRuntime());
 
     EXPECT_TRUE(added);
     EXPECT_TRUE(registry.checkModel("dummy mode"));
@@ -24,8 +44,8 @@ TEST(ModelRegistryTest, RejectsDuplicateModelVersion)
 {
     ModelRegistry registry;
 
-    bool first_add = registry.addModel("dummy mode", "v1");
-    bool second_add = registry.addModel("dummy mode", "v1");
+    bool first_add = registry.addModel("dummy mode", "v1", "test-path", makeRuntime());
+    bool second_add = registry.addModel("dummy mode", "v1", "test-path", makeRuntime());
 
     EXPECT_TRUE(first_add);
     EXPECT_FALSE(second_add);
@@ -35,8 +55,8 @@ TEST(ModelRegistryTest, SameModelCanHaveMultipleVersions)
 {
     ModelRegistry registry;
 
-    EXPECT_TRUE(registry.addModel("dummy mode", "v1"));
-    EXPECT_TRUE(registry.addModel("dummy mode", "v2"));
+    EXPECT_TRUE(registry.addModel("dummy mode", "v1", "test-path", makeRuntime()));
+    EXPECT_TRUE(registry.addModel("dummy mode", "v2", "test-path", makeRuntime()));
 
     EXPECT_TRUE(registry.checkModel("dummy mode"));
     EXPECT_TRUE(registry.checkVersion("dummy mode", "v1"));
@@ -47,8 +67,8 @@ TEST(ModelRegistryTest, DifferentModelsCanHaveSameVersionName)
 {
     ModelRegistry registry;
 
-    EXPECT_TRUE(registry.addModel("dummy mode", "v1"));
-    EXPECT_TRUE(registry.addModel("other model", "v1"));
+    EXPECT_TRUE(registry.addModel("dummy mode", "v1", "test-path", makeRuntime()));
+    EXPECT_TRUE(registry.addModel("other model", "v1", "test-path", makeRuntime()));
 
     EXPECT_TRUE(registry.checkVersion("dummy mode", "v1"));
     EXPECT_TRUE(registry.checkVersion("other model", "v1"));
@@ -58,7 +78,7 @@ TEST(ModelRegistryTest, UnknownVersionReturnsFalse)
 {
     ModelRegistry registry;
 
-    registry.addModel("dummy mode", "v1");
+    registry.addModel("dummy mode", "v1", "test-path", makeRuntime());
 
     EXPECT_FALSE(registry.checkVersion("dummy mode", "v2"));
 }
@@ -67,7 +87,7 @@ TEST(ModelRegistryTest, UnknownModelReturnsFalse)
 {
     ModelRegistry registry;
 
-    registry.addModel("dummy mode", "v1");
+    registry.addModel("dummy mode", "v1", "test-path", makeRuntime());
 
     EXPECT_FALSE(registry.checkModel("missing model"));
     EXPECT_FALSE(registry.checkVersion("missing model", "v1"));

@@ -27,6 +27,8 @@ async def main():
     num_tasks = args.numTasks
     output_file = args.outputFileDestination
 
+    #TODO add model before sending it
+
     #use dummy payload with no model and version for now
     payload = {
         "model": "test model",

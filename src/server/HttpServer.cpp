@@ -11,19 +11,14 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <chrono>
+#include <cstdint>
 
-HttpServer::HttpServer(uint8_t numThreads = std::thread::hardware_concurrency()) : numThreads(numThreads){
-    this->modelReg = new ModelRegistry();
-    this->metricsReg = new MetricsRegistry();
-    this->reqQueue = new RequestQueue();
-    this->workerPool = new WorkerPool(numThreads, reqQueue, modelReg);
-}
-
-HttpServer::~HttpServer(){
-    delete modelReg;
-    delete metricsReg;
-    delete reqQueue;
-    delete workerPool;
+HttpServer::HttpServer(std::size_t numThreads) : numThreads(numThreads){
+    this->modelReg = std::make_shared<ModelRegistry>();
+    this->metricsReg = std::make_shared<MetricsRegistry>();
+    this->reqQueue = std::make_shared<RequestQueue>();
+    this->workerPool = std::make_shared<WorkerPool>(numThreads, reqQueue, modelReg);
 }
 
 void HttpServer::run(){
@@ -34,6 +29,8 @@ void HttpServer::run(){
     this->registerModelRegisterRoute(app);
     this->registerMetricsRoute(app);
     this->registerModelRoute(app);
+
+    workerPool->start();
     
     app.port(8080).run();
 }
@@ -62,6 +59,14 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         //make sure request is well formatted
         crow::response valid_request = this->checkPrediction(req_data);
         if(valid_request.code != 200){
+            crow::json::wvalue error;
+            error["error"] = valid_request.body;
+            error["request_latency_ms"] = t.end();
+            error["inference_latency_ms"] = nullptr;
+
+            valid_request.body = error.dump() + "\n";
+            valid_request.add_header("Content-Type", "application/json");
+
             res = std::move(valid_request);
             res.end();
             metricsReg->addFailedRequest();
@@ -71,41 +76,40 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         //make sure model and version exists;
         std::string model = req_data["model"].s();
         std::string version = req_data["version"].s();
-        if(!this->modelReg->checkModel(model)){
-            res.code = 400;
-            res.body = "Error: Model not registered\n";
-            res.end();
-            metricsReg->addFailedRequest();
-            return;
-        } else if(!this->modelReg->checkVersion(model, version)){
-            res.code = 400;
-            res.body = "Error: Version not registered\n";
-            res.end();
-            metricsReg->addFailedRequest();
-            return;
-        }
 
         ModelRuntime* runtime = modelReg->getRuntime(model, version);
         crow::json::wvalue x;
         if(!runtime){
             x["error"] = "Runtime does not exist";
+            double req_latency = t.end();
+            x["request_latency_ms"] = req_latency;
             metricsReg->addFailedRequest();
             res.code = 400;
         }else{
-            PredictionResponse pResp = runtime->predict(PredictionRequest(model, version, req_data["input"].s()));
-            x["model"] = pResp.model;
-            x["version"] = pResp.version;
-            x["prediction"] = pResp.prediction;
-            x["confidence"] = pResp.confidence;
-            x["inference_latency_ms"] = pResp.latency_ms;
+            PredictionRequest pReq(model, version, req_data["input"].s());
+            try{
+                std::future<PredictionResponse> pRespFut = reqQueue->push(pReq);
+                PredictionResponse pResp = pRespFut.get();
+                x["model"] = pResp.model;
+                x["version"] = pResp.version;
+                x["prediction"] = pResp.prediction;
+                x["confidence"] = pResp.confidence;
+                x["inference_latency_ms"] = pResp.latency_ms;
 
-            metricsReg->addInferenceLatency(pResp.latency_ms);
-
-            double req_latency = t.end();
-            x["request_latency_ms"] = req_latency;
-            metricsReg->addPrediction(req_latency);
-            metricsReg->addSuccessfulRequest();
-            res.code = 200;
+                metricsReg->addInferenceLatency(pResp.latency_ms);
+                double req_latency = t.end();
+                x["request_latency_ms"] = req_latency;
+                metricsReg->addPrediction(req_latency);
+                metricsReg->addSuccessfulRequest();
+                res.code = 200;
+            } catch(...){//TODO figure out exact errors later
+                x["error"] = "Prediction Failed";
+                double req_latency = t.end();
+                x["request_latency_ms"] = req_latency;
+                metricsReg->addFailedRequest();
+                res.code = 500;
+            }
+            
         }
         
 
@@ -124,21 +128,7 @@ void HttpServer::registerModelRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        const std::unordered_map<std::string, std::vector<ModelInfo>>& availableModels = this->modelReg->getAvailableModels();
-        std::vector<crow::json::wvalue> modelOutput;
-        modelOutput.reserve(availableModels.size());
-        for(auto& [modelName, models] : availableModels){
-            crow::json::wvalue temp;
-            temp["name"] = modelName;
-            std::vector<std::string> modelVersions;
-            modelVersions.reserve(models.size());
-            for(const ModelInfo& model : models){
-                modelVersions.push_back(model.modelVersion);
-            }
-            temp["versions"] = modelVersions;
-            modelOutput.push_back(temp);
-        }
-        x["models"] = std::move(modelOutput);
+        x["models"] = std::move(modelReg->getAvailableModels());
 
         res.body = x.dump() + "\n";
         res.add_header("Content-Type", "application/json");
@@ -235,9 +225,9 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& req_data){
         return crow::response(400, "Invalid JSON Body");
     }
 
-    if(!req_data.has("name")){
+    if(!req_data.has("name") || req_data["name"].size() == 0){
         return crow::response(400, "Missing required field: name");
-    } else if(!req_data.has("version")){
+    } else if(!req_data.has("version") || req_data["version"].size() == 0){
         return crow::response(400, "Missing required field: version");
     }
 

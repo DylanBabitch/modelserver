@@ -2,13 +2,19 @@
 #include <crow.h>
 #include "model/ModelRegistry.hpp"
 #include "metrics/MetricsRegistry.hpp"
+#include "scheduler/RequestQueue.hpp"
+#include "scheduler/WorkerPool.hpp"
+
+#include <thread>
+#include <cstdint>
+#include <memory>
 
 class HttpServer{
-    ModelRegistry* modelReg;
-    MetricsRegistry* metricsReg;
-    RequestQueue* reqQueue;
-    WorkerPool* workerPool;
-    std::uint8_t numThreads;
+    std::shared_ptr<ModelRegistry> modelReg;
+    std::shared_ptr<MetricsRegistry> metricsReg;
+    std::shared_ptr<RequestQueue> reqQueue;
+    std::shared_ptr<WorkerPool> workerPool;
+    std::size_t numThreads;
     crow::response checkPrediction(crow::json::rvalue& req_data);
     crow::response checkModelRegister(crow::json::rvalue& req_data);
     void registerHealthRoute(crow::SimpleApp& app);
@@ -17,7 +23,6 @@ class HttpServer{
     void registerModelRegisterRoute(crow::SimpleApp& app);
     void registerMetricsRoute(crow::SimpleApp& app);
 public:
-    HttpServer(uint8_t numThreads = std::thread::hardware_concurrency());
-    ~HttpServer();
+    HttpServer(std::size_t numThreads = std::thread::hardware_concurrency());
     void run();
 };

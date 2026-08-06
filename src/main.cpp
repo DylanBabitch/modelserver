@@ -7,7 +7,7 @@
 int main(){
 //     ModelRegistry modelReg;
 //     MetricsRegistry metricReg;
-    HttpServer h();
+    HttpServer h;
     h.run();
     return 0;
 }
