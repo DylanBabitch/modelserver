@@ -5,6 +5,7 @@ import time
 import argparse
 import json
 import os
+import requests
 
 
 async def main():
@@ -27,7 +28,12 @@ async def main():
     num_tasks = args.numTasks
     output_file = args.outputFileDestination
 
+    payload = {
+        "name": "test model",
+        "version": "v1"
+    }
     #TODO add model before sending it
+    requests.post(args.url + "/models/register", json=payload)
 
     #use dummy payload with no model and version for now
     payload = {
@@ -35,6 +41,7 @@ async def main():
         "version": "v1",
         "input": "test"
     }
+    
     try:
         await t.run(url, payload, num_clients, num_tasks)
     except ValueError as e:

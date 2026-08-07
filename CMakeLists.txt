@@ -47,9 +47,13 @@ enable_testing()
 add_executable(modelserver_tests
     tests/metrics_tests.cpp
     tests/model_registry_tests.cpp
+    tests/request_queue_tests.cpp
+    tests/worker_pool_tests.cpp
 
     src/metrics/MetricsRegistry.cpp
     src/model/ModelRegistry.cpp
+    src/scheduler/RequestQueue.cpp
+    src/scheduler/WorkerPool.cpp
 )
 
 target_include_directories(modelserver_tests PRIVATE
@@ -58,6 +62,7 @@ target_include_directories(modelserver_tests PRIVATE
 
 target_link_libraries(modelserver_tests PRIVATE
     GTest::gtest_main
+    Crow::Crow
 )
 
 include(GoogleTest)

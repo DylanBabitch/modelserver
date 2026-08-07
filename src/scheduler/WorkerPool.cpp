@@ -27,13 +27,29 @@ WorkerPool::~WorkerPool(){
 }
 
 void WorkerPool::start(){
-    std::lock_guard<std::mutex> lock(mtx);
+    std::unique_lock<std::mutex> lock(mtx);
+
     if(started || shutdown) return;
+
     //creating thread
-    started = true;
-    for(std::size_t i = 0; i < workerCount; ++i){
-        workers.emplace_back(&WorkerPool::workerLoop, this);
+    try{
+        for(std::size_t i = 0; i < workerCount; ++i){
+            workers.emplace_back(&WorkerPool::workerLoop, this);
+        }
+        started = true;
+    } catch (...){
+        shutdown = true;
+        lock.unlock();
+        reqQueue->setShutdown();
+
+        for(std::thread& worker : workers){
+            if(worker.joinable()){
+                worker.join();
+            }
+        }
+        throw;
     }
+    
     
 }
 

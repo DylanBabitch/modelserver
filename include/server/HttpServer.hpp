@@ -23,6 +23,6 @@ class HttpServer{
     void registerModelRegisterRoute(crow::SimpleApp& app);
     void registerMetricsRoute(crow::SimpleApp& app);
 public:
-    HttpServer(std::size_t numThreads = std::thread::hardware_concurrency());
+    HttpServer(std::size_t numThreads);
     void run();
 };

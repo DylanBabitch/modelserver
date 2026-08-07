@@ -41,23 +41,27 @@ bool ModelRegistry::addModel(const std::string& modelName, const std::string& ve
     return true;
 }
 
-const std::vector<crow::json::wvalue> ModelRegistry::getAvailableModels() const{
-    std::lock_guard<std::mutex> lock(mtx);
-    std::vector<crow::json::wvalue> modelOutput;
-    modelOutput.reserve(availableModels.size());
-    for(auto& [modelName, models] : availableModels){
-        crow::json::wvalue temp;
-        temp["name"] = modelName;
-        std::vector<std::string> modelVersions;
-        modelVersions.reserve(models.size());
-        for(const ModelInfo& model : models){
-            modelVersions.push_back(model.modelVersion);
-        }
-        temp["versions"] = modelVersions;
-        modelOutput.push_back(temp);
-    }
-    return modelOutput;
-}
+ std::vector<ModelSummary> ModelRegistry::getAvailableModels() const
+  {
+      std::lock_guard<std::mutex> lock(mtx);
+
+      std::vector<ModelSummary> snapshot;
+      snapshot.reserve(availableModels.size());
+
+      for (const auto& [modelName, models] : availableModels) {
+          ModelSummary summary;
+          summary.name = modelName;
+          summary.versions.reserve(models.size());
+
+          for (const ModelInfo& model : models) {
+              summary.versions.push_back(model.modelVersion);
+          }
+
+          snapshot.push_back(std::move(summary));
+      }
+
+      return snapshot;
+  }
 
 ModelRuntime* ModelRegistry::getRuntime(const std::string& modelName, const std::string& modelVersion) const {
     std::lock_guard<std::mutex> lock(mtx);

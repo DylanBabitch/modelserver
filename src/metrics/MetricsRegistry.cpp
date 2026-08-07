@@ -90,8 +90,8 @@ std::pair<double, double> MetricsRegistry::getP50Latency() const{
     std::pair<double, double> p50Latencies; //{req latency, inference latency}
 
     if(req_lat.size() != 0){
-        size_t n = req_lat.size();
-        size_t mid = n / 2;
+        std::size_t n = req_lat.size();
+        std::size_t mid = n / 2;
         std::nth_element(req_lat.begin(), req_lat.begin() + mid, req_lat.end());
         //get request latency
         if(n % 2 == 1){
@@ -105,8 +105,8 @@ std::pair<double, double> MetricsRegistry::getP50Latency() const{
     }
    
     if(infer_lat.size() != 0){
-        size_t n = infer_lat.size();
-        size_t mid = n /2;
+        std::size_t n = infer_lat.size();
+        std::size_t mid = n /2;
         //get inference latency
         std::nth_element(infer_lat.begin(), infer_lat.begin() + mid, infer_lat.end());
         if(n % 2 == 1){
@@ -135,7 +135,7 @@ std::pair<double, double> MetricsRegistry::getP95Latency() const{
 
     std::pair<double, double> p95Latencies; //{req latency, inference latency}
     if(req_lat.size() != 0){
-        std::size_t idx = static_cast<size_t>(std::ceil(0.95 * req_lat.size())) - 1;
+        std::size_t idx = static_cast<std::size_t>(std::ceil(0.95 * req_lat.size())) - 1;
         //get request latency
         std::nth_element(req_lat.begin(), req_lat.begin() + idx, req_lat.end());
         p95Latencies.first = req_lat[idx];
@@ -145,7 +145,7 @@ std::pair<double, double> MetricsRegistry::getP95Latency() const{
 
     //get inference latency
     if(infer_lat.size() != 0){
-        std::size_t idx = static_cast<size_t>(std::ceil(0.95 * infer_lat.size())) - 1;
+        std::size_t idx = static_cast<std::size_t>(std::ceil(0.95 * infer_lat.size())) - 1;
         std::nth_element(infer_lat.begin(), infer_lat.begin() + idx, infer_lat.end());
         p95Latencies.second = infer_lat[idx];
     }else{

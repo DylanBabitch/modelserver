@@ -83,6 +83,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
             x["error"] = "Runtime does not exist";
             double req_latency = t.end();
             x["request_latency_ms"] = req_latency;
+            x["inference_latency_ms"] = nullptr;
             metricsReg->addFailedRequest();
             res.code = 400;
         }else{
@@ -106,6 +107,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
                 x["error"] = "Prediction Failed";
                 double req_latency = t.end();
                 x["request_latency_ms"] = req_latency;
+                x["inference_latency_ms"] = nullptr;
                 metricsReg->addFailedRequest();
                 res.code = 500;
             }
@@ -126,11 +128,23 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
 
 void HttpServer::registerModelRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/models")
-    ([this](crow::response& res){
-        crow::json::wvalue x;
-        x["models"] = std::move(modelReg->getAvailableModels());
+    ([this](crow::response& res) {
+        const std::vector<ModelSummary> models = modelReg->getAvailableModels();
 
-        res.body = x.dump() + "\n";
+        crow::json::wvalue::list modelsJson;
+        modelsJson.reserve(models.size());
+
+        for(const ModelSummary& model : models){
+            crow::json::wvalue modelJson;
+            modelJson["name"] = model.name;
+            modelJson["versions"] = model.versions;
+            modelsJson.emplace_back(std::move(modelJson));
+        }
+
+        crow::json::wvalue responseJson;
+        responseJson["models"] = std::move(modelsJson);
+
+        res.body = responseJson.dump() + "\n";
         res.add_header("Content-Type", "application/json");
         res.end();
     });
@@ -225,9 +239,9 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& req_data){
         return crow::response(400, "Invalid JSON Body");
     }
 
-    if(!req_data.has("name") || req_data["name"].size() == 0){
+    if(!req_data.has("name")){
         return crow::response(400, "Missing required field: name");
-    } else if(!req_data.has("version") || req_data["version"].size() == 0){
+    } else if(!req_data.has("version")){
         return crow::response(400, "Missing required field: version");
     }
 
@@ -235,6 +249,11 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& req_data){
         return crow::response(400, "Field 'name' must be a string");
     } else if(req_data["version"].t() != crow::json::type::String){
         return crow::response(400, "Field 'version' must be a string");
+    }
+    if(req_data["name"].size() == 0){
+        return crow::response(400, "Field name must be non-empty");
+    } else if(req_data["version"].size() == 0){
+        return crow::response(400, "Field version must be non-empty");
     }
 
     return crow::response(200, "Well formatted");

@@ -1,0 +1,12 @@
+[
+    {
+        "number_of_clients": 1,
+        "number_of_tasks": 100,
+        "number_of_successes": 100,
+        "number_of_failures": 0,
+        "average_latency_ms": 43.72796386002847,
+        "p50_latency_ms": 44.002807999731886,
+        "p95_latency_ms": 45.74251470035051,
+        "requests_per_second": 22.855117052704102
+    }
+]

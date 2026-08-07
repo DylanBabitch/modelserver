@@ -15,6 +15,11 @@ struct ModelInfo{
     std::unique_ptr<ModelRuntime> runtime; //Runtime for model
 };
 
+struct ModelSummary {
+      std::string name;
+      std::vector<std::string> versions;
+};
+
 class ModelRegistry{
 private:
     //TODO maybe change availableModel impl if there's a lot of versions per model
@@ -25,6 +30,6 @@ public:
     bool addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& runtime); //Returns true if model gets added, false if it already exists
     bool checkModel(const std::string& modelName) const; //Checks if model modelName exists
     bool checkVersion(const std::string& modelName, const std::string& version) const; //Checks if model modelName with version versionName exists
-    const std::vector<crow::json::wvalue> getAvailableModels() const; //returns all 
+    std::vector<ModelSummary> getAvailableModels() const;
     ModelRuntime* getRuntime(const std::string& modelName, const std::string& modelVersion) const; //TODO maybe use const ModelRuntime* depending on final ModelRuntime impl
 };
