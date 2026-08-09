@@ -20,7 +20,9 @@ private:
     bool shutdown = false;
 public:
     std::future<PredictionResponse> push(PredictionRequest request);
-    std::optional<QueuedRequest> pop();
+    std::optional<QueuedRequest> popBlocking();
+    std::optional<QueuedRequest> popNonBlocking();
+    std::optional<QueuedRequest&> peakUntil(const std::chrono::steady_clock::time_point endTime);
     std::size_t size() const;
     bool empty() const;
     void setShutdown();

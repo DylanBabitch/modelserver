@@ -8,5 +8,35 @@
         "p50_latency_ms": 44.002807999731886,
         "p95_latency_ms": 45.74251470035051,
         "requests_per_second": 22.855117052704102
+    },
+    {
+        "number_of_clients": 8,
+        "number_of_tasks": 500,
+        "number_of_successes": 500,
+        "number_of_failures": 0,
+        "average_latency_ms": 44.550983365999855,
+        "p50_latency_ms": 44.26085050045003,
+        "p95_latency_ms": 48.90807595024853,
+        "requests_per_second": 177.67366006539825
+    },
+    {
+        "number_of_clients": 32,
+        "number_of_tasks": 1000,
+        "number_of_successes": 1000,
+        "number_of_failures": 0,
+        "average_latency_ms": 47.773423492986694,
+        "p50_latency_ms": 46.92826149994289,
+        "p95_latency_ms": 54.20302005031771,
+        "requests_per_second": 655.0541359532496
+    },
+    {
+        "number_of_clients": 64,
+        "number_of_tasks": 2000,
+        "number_of_successes": 2000,
+        "number_of_failures": 0,
+        "average_latency_ms": 58.585140268001794,
+        "p50_latency_ms": 49.93593149993103,
+        "p95_latency_ms": 79.64070760008326,
+        "requests_per_second": 1069.8430300521197
     }
 ]

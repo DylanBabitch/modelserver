@@ -6,20 +6,12 @@
 #include <thread>
 #include <mutex>
 
-WorkerPool::WorkerPool(std::size_t numWorkers, std::shared_ptr<RequestQueue> reqQueue, std::shared_ptr<ModelRegistry> modelReg){
+WorkerPool::WorkerPool(std::size_t numWorkers, RequestQueue& reqQueue, ModelRegistry& modelReg) : reqQueue(reqQueue), modelReg(modelReg){
     if(numWorkers == 0){
         throw std::runtime_error("numWorkers must be at least 1");
-    } else if(!reqQueue){
-        throw std::runtime_error("reqQueue must point to a valid RequestQueue");
-    } else if(!modelReg){
-        throw std::runtime_error("modelReg must point to a valid ModelRegistry");
     }
-
-
     workers.reserve(numWorkers);
     this->workerCount = numWorkers;
-    this->reqQueue = reqQueue;
-    this->modelReg = modelReg;
 }
 
 WorkerPool::~WorkerPool(){
@@ -40,7 +32,7 @@ void WorkerPool::start(){
     } catch (...){
         shutdown = true;
         lock.unlock();
-        reqQueue->setShutdown();
+        reqQueue.setShutdown();
 
         for(std::thread& worker : workers){
             if(worker.joinable()){
@@ -58,7 +50,7 @@ void WorkerPool::stop(){
     if(shutdown || !started){
         return;
     }
-    reqQueue->setShutdown();
+    reqQueue.setShutdown();
     for(auto& thread : workers){
         thread.join();
     }
@@ -68,7 +60,7 @@ void WorkerPool::stop(){
 void WorkerPool::workerLoop(){
     while(!shutdown){
         //check if the next req exists
-        auto nextReq = reqQueue->pop();
+        auto nextReq = reqQueue.pop();
 
         if(!nextReq){
             return;
@@ -81,7 +73,7 @@ void WorkerPool::workerLoop(){
         std::string model = nextReq->request.model;
         std::string version = nextReq->request.version;
 
-        ModelRuntime* modelRuntime = modelReg->getRuntime(model, version);
+        ModelRuntime* modelRuntime = modelReg.getRuntime(model, version);
         if(!modelRuntime){
             nextReq->status = QueuedRequest::RequestStatus::Failed;
             nextReq->errorMessage = "model/version runtime not found.";

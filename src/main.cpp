@@ -8,10 +8,14 @@
 #include <thread>
 
 int main(){
-//     ModelRegistry modelReg;
-//     MetricsRegistry metricReg;
+    ModelRegistry modelReg;
+    MetricsRegistry metricsReg;
+    RequestQueue reqQueue;
+
     std::size_t numThreads = std::max(std::thread::hardware_concurrency(), 1u);
-    HttpServer h(numThreads);
+    WorkerPool workerPool(numThreads, reqQueue, modelReg);
+    
+    HttpServer h(modelReg, metricsReg, reqQueue);
     h.run();
     return 0;
 }

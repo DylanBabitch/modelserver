@@ -10,11 +10,9 @@
 #include <memory>
 
 class HttpServer{
-    std::shared_ptr<ModelRegistry> modelReg;
-    std::shared_ptr<MetricsRegistry> metricsReg;
-    std::shared_ptr<RequestQueue> reqQueue;
-    std::shared_ptr<WorkerPool> workerPool;
-    std::size_t numThreads;
+    ModelRegistry& modelReg;
+    MetricsRegistry& metricsReg;
+    RequestQueue& reqQueue;
     crow::response checkPrediction(crow::json::rvalue& req_data);
     crow::response checkModelRegister(crow::json::rvalue& req_data);
     void registerHealthRoute(crow::SimpleApp& app);
@@ -23,6 +21,6 @@ class HttpServer{
     void registerModelRegisterRoute(crow::SimpleApp& app);
     void registerMetricsRoute(crow::SimpleApp& app);
 public:
-    HttpServer(std::size_t numThreads);
+    HttpServer(ModelRegistry& modelReg, MetricsRegistry& metricsReg, RequestQueue& reqQueue);
     void run();
 };

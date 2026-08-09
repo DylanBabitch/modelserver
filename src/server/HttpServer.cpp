@@ -14,12 +14,7 @@
 #include <chrono>
 #include <cstdint>
 
-HttpServer::HttpServer(std::size_t numThreads) : numThreads(numThreads){
-    this->modelReg = std::make_shared<ModelRegistry>();
-    this->metricsReg = std::make_shared<MetricsRegistry>();
-    this->reqQueue = std::make_shared<RequestQueue>();
-    this->workerPool = std::make_shared<WorkerPool>(numThreads, reqQueue, modelReg);
-}
+HttpServer::HttpServer(ModelRegistry& modelReg, MetricsRegistry& metricsReg, RequestQueue& reqQueue) : modelReg(modelReg), metricsReg(metricsReg), reqQueue(reqQueue){}
 
 void HttpServer::run(){
     crow::SimpleApp app;
@@ -30,8 +25,6 @@ void HttpServer::run(){
     this->registerMetricsRoute(app);
     this->registerModelRoute(app);
 
-    workerPool->start();
-    
     app.port(8080).run();
 }
 
@@ -54,7 +47,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         Timer t;
         crow::json::rvalue req_data = crow::json::load(req.body); 
     
-        metricsReg->addActiveRequest();
+        metricsReg.addActiveRequest();
 
         //make sure request is well formatted
         crow::response valid_request = this->checkPrediction(req_data);
@@ -69,7 +62,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
 
             res = std::move(valid_request);
             res.end();
-            metricsReg->addFailedRequest();
+            metricsReg.addFailedRequest();
             return;
         }
         
@@ -77,19 +70,19 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
         std::string model = req_data["model"].s();
         std::string version = req_data["version"].s();
 
-        ModelRuntime* runtime = modelReg->getRuntime(model, version);
+        ModelRuntime* runtime = modelReg.getRuntime(model, version);
         crow::json::wvalue x;
         if(!runtime){
             x["error"] = "Runtime does not exist";
             double req_latency = t.end();
             x["request_latency_ms"] = req_latency;
             x["inference_latency_ms"] = nullptr;
-            metricsReg->addFailedRequest();
+            metricsReg.addFailedRequest();
             res.code = 400;
         }else{
             PredictionRequest pReq(model, version, req_data["input"].s());
             try{
-                std::future<PredictionResponse> pRespFut = reqQueue->push(pReq);
+                std::future<PredictionResponse> pRespFut = reqQueue.push(pReq);
                 PredictionResponse pResp = pRespFut.get();
                 x["model"] = pResp.model;
                 x["version"] = pResp.version;
@@ -97,18 +90,18 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
                 x["confidence"] = pResp.confidence;
                 x["inference_latency_ms"] = pResp.latency_ms;
 
-                metricsReg->addInferenceLatency(pResp.latency_ms);
+                metricsReg.addInferenceLatency(pResp.latency_ms);
                 double req_latency = t.end();
                 x["request_latency_ms"] = req_latency;
-                metricsReg->addPrediction(req_latency);
-                metricsReg->addSuccessfulRequest();
+                metricsReg.addPrediction(req_latency);
+                metricsReg.addSuccessfulRequest();
                 res.code = 200;
             } catch(...){//TODO figure out exact errors later
                 x["error"] = "Prediction Failed";
                 double req_latency = t.end();
                 x["request_latency_ms"] = req_latency;
                 x["inference_latency_ms"] = nullptr;
-                metricsReg->addFailedRequest();
+                metricsReg.addFailedRequest();
                 res.code = 500;
             }
             
@@ -129,7 +122,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app){
 void HttpServer::registerModelRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res) {
-        const std::vector<ModelSummary> models = modelReg->getAvailableModels();
+        const std::vector<ModelSummary> models = modelReg.getAvailableModels();
 
         crow::json::wvalue::list modelsJson;
         modelsJson.reserve(models.size());
@@ -154,13 +147,13 @@ void HttpServer::registerMetricsRoute(crow::SimpleApp& app){
     CROW_ROUTE(app, "/metrics")
     ([this](crow::response& res){
         crow::json::wvalue x;
-        x["total_reqs"] = this->metricsReg->getRequestsTotal();
-        x["successful_reqs"] = this->metricsReg->getRequestsSuccessful();
-        x["failed_reqs"] = this->metricsReg->getRequestsFailed();
-        x["average_request_latency"] = this->metricsReg->getAverageRequestLatency();
-        x["average_inference_latency"] = this->metricsReg->getAverageInferenceLatency();
-        auto [req_p50_latency, infer_p50_latency] = this->metricsReg->getP50Latency();
-        auto [req_p95_latency, infer_p95_latency] = this->metricsReg->getP95Latency();
+        x["total_reqs"] = metricsReg.getRequestsTotal();
+        x["successful_reqs"] = metricsReg.getRequestsSuccessful();
+        x["failed_reqs"] = metricsReg.getRequestsFailed();
+        x["average_request_latency"] = metricsReg.getAverageRequestLatency();
+        x["average_inference_latency"] = metricsReg.getAverageInferenceLatency();
+        auto [req_p50_latency, infer_p50_latency] = metricsReg.getP50Latency();
+        auto [req_p95_latency, infer_p95_latency] = metricsReg.getP95Latency();
         x["request_p50_latency"] = req_p50_latency;
         x["request_p95_latency"] = req_p95_latency;
         x["inference_p50_latency"] = infer_p50_latency;
@@ -192,13 +185,13 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
         auto dummyRuntime = std::make_unique<DummyRuntime>();
 
         //register model
-        if(!this->modelReg->addModel(name, version, path, std::move(dummyRuntime))){
+        if(!modelReg.addModel(name, version, path, std::move(dummyRuntime))){
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
             return;
         }
-        metricsReg->addRegisteredModel();
+        metricsReg.addRegisteredModel();
         res.code = 200;
         res.body = "Model Added Successfully\n";
         res.end();

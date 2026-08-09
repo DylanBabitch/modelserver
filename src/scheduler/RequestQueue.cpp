@@ -30,7 +30,7 @@ std::future<PredictionResponse> RequestQueue::push(PredictionRequest request){
     return future;
 }
 
-std::optional<QueuedRequest> RequestQueue::pop(){
+std::optional<QueuedRequest> RequestQueue::popBlocking(){
     std::unique_lock<std::mutex> lock(mtx);
 
     cv.wait(lock, [this]{return (shutdown || !requests.empty());});
@@ -43,6 +43,30 @@ std::optional<QueuedRequest> RequestQueue::pop(){
     requests.pop();
 
     return request;
+}
+
+std::optional<QueuedRequest> RequestQueue::popNonBlocking(){
+    std::unique_lock<std::mutex> lock(mtx);
+    if (shutdown && requests.empty()){
+        return std::nullopt;
+    }
+    
+    QueuedRequest request = std::move(requests.front());
+    requests.pop();
+
+    return request;
+}
+
+std::optional<QueuedRequest&> RequestQueue::peakUntil(const std::chrono::steady_clock::time_point endTime){
+    std::unique_lock<std::mutex> lock(mtx);
+
+    cv.wait(lock, [this, endTime]{return (shutdown || std::chrono::steady_clock::now() > endTime || !requests.empty());});
+
+    if(std::chrono::steady_clock::now() > endTime || (shutdown && requests.empty())){
+        return std::nullopt;
+    }
+
+    return requests.front();
 }
 
 std::size_t RequestQueue::size() const{
