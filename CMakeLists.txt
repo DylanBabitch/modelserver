@@ -26,6 +26,7 @@ add_executable(modelserver
 
     src/scheduler/WorkerPool.cpp
     src/scheduler/RequestQueue.cpp
+    src/scheduler/BatchManager.cpp
 )
 
 target_include_directories(modelserver PRIVATE
@@ -54,6 +55,7 @@ add_executable(modelserver_tests
     src/model/ModelRegistry.cpp
     src/scheduler/RequestQueue.cpp
     src/scheduler/WorkerPool.cpp
+    src/scheduler/BatchManager.cpp
 )
 
 target_include_directories(modelserver_tests PRIVATE

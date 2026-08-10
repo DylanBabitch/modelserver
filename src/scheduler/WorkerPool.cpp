@@ -1,12 +1,13 @@
 #include "scheduler/WorkerPool.hpp"
 #include "model/ModelRuntime.hpp"
+#include <scheduler/BatchManager.hpp>
 
 #include <stdexcept>
 #include <chrono>
 #include <thread>
 #include <mutex>
 
-WorkerPool::WorkerPool(std::size_t numWorkers, RequestQueue& reqQueue, ModelRegistry& modelReg) : reqQueue(reqQueue), modelReg(modelReg){
+WorkerPool::WorkerPool(std::size_t numWorkers, BatchManager& batchManager, ModelRegistry& modelReg) : batchManager(batchManager), modelReg(modelReg){
     if(numWorkers == 0){
         throw std::runtime_error("numWorkers must be at least 1");
     }
@@ -32,7 +33,7 @@ void WorkerPool::start(){
     } catch (...){
         shutdown = true;
         lock.unlock();
-        reqQueue.setShutdown();
+        batchManager.shutdown();
 
         for(std::thread& worker : workers){
             if(worker.joinable()){
@@ -50,7 +51,7 @@ void WorkerPool::stop(){
     if(shutdown || !started){
         return;
     }
-    reqQueue.setShutdown();
+    batchManager.shutdown();
     for(auto& thread : workers){
         thread.join();
     }
@@ -60,39 +61,39 @@ void WorkerPool::stop(){
 void WorkerPool::workerLoop(){
     while(!shutdown){
         //check if the next req exists
-        auto nextReq = reqQueue.pop();
+        auto nextBatch = batchManager.getBatch();
 
-        if(!nextReq){
+        if(!nextBatch){
             return;
         }
+        for(auto& req : nextBatch->requests){
+            req.status = QueuedRequest::RequestStatus::Running;
+            req.processingStartTime = std::chrono::steady_clock::now();
 
-        nextReq->status = QueuedRequest::RequestStatus::Running;
-        nextReq->processingStartTime = std::chrono::steady_clock::now();
+            //process the request
+            std::string model = req.request.model;
+            std::string version = req.request.version;
 
-        //process the request
-        std::string model = nextReq->request.model;
-        std::string version = nextReq->request.version;
-
-        ModelRuntime* modelRuntime = modelReg.getRuntime(model, version);
-        if(!modelRuntime){
-            nextReq->status = QueuedRequest::RequestStatus::Failed;
-            nextReq->errorMessage = "model/version runtime not found.";
-            nextReq->resultPromise.set_exception(std::make_exception_ptr(std::runtime_error("model/version runtime not found.")));
-            nextReq->finishTime = std::chrono::steady_clock::now();
-            continue;
+            ModelRuntime* modelRuntime = modelReg.getRuntime(model, version);
+            if(!modelRuntime){
+                req.status = QueuedRequest::RequestStatus::Failed;
+                req.errorMessage = "model/version runtime not found.";
+                req.resultPromise.set_exception(std::make_exception_ptr(std::runtime_error("model/version runtime not found.")));
+                req.finishTime = std::chrono::steady_clock::now();
+                continue;
+            }
+            try{
+                PredictionResponse resp = modelRuntime->predict(req.request);
+                req.status = QueuedRequest::RequestStatus::Completed;
+                req.finishTime = std::chrono::steady_clock::now();
+                req.resultPromise.set_value(resp);
+            } catch (...){
+                req.status = QueuedRequest::RequestStatus::Failed;
+                req.errorMessage = "runtime predict failed.";
+                req.finishTime = std::chrono::steady_clock::now();
+                req.resultPromise.set_exception(std::make_exception_ptr(std::runtime_error("runtime predict failed.")));
+            }
         }
-        try{
-            PredictionResponse resp = modelRuntime->predict(nextReq->request);
-            nextReq->status = QueuedRequest::RequestStatus::Completed;
-            nextReq->finishTime = std::chrono::steady_clock::now();
-            nextReq->resultPromise.set_value(resp);
-        } catch (...){
-            nextReq->status = QueuedRequest::RequestStatus::Failed;
-            nextReq->errorMessage = "runtime predict failed.";
-            nextReq->finishTime = std::chrono::steady_clock::now();
-            nextReq->resultPromise.set_exception(std::make_exception_ptr(std::runtime_error("runtime predict failed.")));
-        }
-        
     }
 }
 

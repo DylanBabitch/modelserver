@@ -8,6 +8,10 @@
 BatchManager::BatchManager(RequestQueue& reqQueue, std::size_t maxBatchSize = 8, std::chrono::milliseconds batchTimeoutMs = std::chrono::milliseconds(10)) 
                             : reqQueue(reqQueue), maxBatchSize(maxBatchSize), batchTimeoutMs(batchTimeoutMs) {}
 
+bool BatchManager::isCompatiable(PredictionBatch& batch, QueuedRequest& nextReq){
+    return batch.model == nextReq.request.model && batch.version == nextReq.request.version;
+}
+
 std::optional<PredictionBatch> BatchManager::getBatch(){
     PredictionBatch batch;
 
@@ -49,10 +53,13 @@ std::optional<PredictionBatch> BatchManager::getBatch(){
 
         batch.requests.push_back(std::move(*nextRequest));
     }
+    batch.dispatchTime = Clock::now();
+    return batch;
 }
 
 void BatchManager::shutdown(){
     isShutdown = true;
+    reqQueue.setShutdown();
 }
 
 std::size_t BatchManager::getMaxBatchSize() const{

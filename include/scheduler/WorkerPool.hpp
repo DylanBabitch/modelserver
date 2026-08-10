@@ -2,7 +2,7 @@
 
 #include <model/ModelRegistry.hpp>
 #include <metrics/MetricsRegistry.hpp>
-#include <scheduler/RequestQueue.hpp>
+#include <scheduler/BatchManager.hpp>
 
 #include <vector>
 #include <cstddef>
@@ -13,7 +13,7 @@
 
 class WorkerPool{
 private:
-    RequestQueue& reqQueue;
+    BatchManager& batchManager;
     ModelRegistry& modelReg;
 
     std::size_t workerCount;
@@ -26,7 +26,7 @@ private:
 
     void workerLoop();
 public:
-    WorkerPool(std::size_t numWorkers, RequestQueue& reqQueue, ModelRegistry& modelReg);
+    WorkerPool(std::size_t numWorkers, BatchManager& reqQueue, ModelRegistry& modelReg);
     ~WorkerPool();
     void start();
     void stop();
