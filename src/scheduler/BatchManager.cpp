@@ -1,18 +1,31 @@
 #include "scheduler/BatchManager.hpp"
 #include "scheduler/RequestQueue.hpp"
+#include "metrics/MetricsRegistry.hpp"
 
 #include <cstddef>
 #include <optional>
 #include <mutex>
 
-BatchManager::BatchManager(RequestQueue& reqQueue, std::size_t maxBatchSize = 8, std::chrono::milliseconds batchTimeoutMs = std::chrono::milliseconds(10)) 
-                            : reqQueue(reqQueue), maxBatchSize(maxBatchSize), batchTimeoutMs(batchTimeoutMs) {}
+namespace {
 
-bool BatchManager::isCompatiable(PredictionBatch& batch, QueuedRequest& nextReq){
+double elapsedMilliseconds(
+    const std::chrono::steady_clock::time_point start,
+    const std::chrono::steady_clock::time_point finish)
+{
+    return std::chrono::duration<double, std::milli>(finish - start).count();
+}
+
+} // namespace
+
+BatchManager::BatchManager(RequestQueue& reqQueue, MetricsRegistry& metricsReg, std::size_t maxBatchSize, std::chrono::milliseconds batchTimeoutMs)
+    : maxBatchSize(maxBatchSize), batchTimeoutMs(batchTimeoutMs), reqQueue(reqQueue), metricsReg(metricsReg) {}
+
+bool BatchManager::isCompatible(const PredictionBatch& batch, const QueuedRequest& nextReq) const {
     return batch.model == nextReq.request.model && batch.version == nextReq.request.version;
 }
 
 std::optional<PredictionBatch> BatchManager::getBatch(){
+    std::unique_lock<std::mutex> managerLock(mtx);
     PredictionBatch batch;
 
     auto firstReq = reqQueue.popBlocking();
@@ -21,15 +34,14 @@ std::optional<PredictionBatch> BatchManager::getBatch(){
         return std::nullopt;
     }
 
-    batch.creationTime = Clock::now();
+    batch.creationTime = PredictionBatch::Clock::now();
     batch.model = firstReq->request.model;
     batch.version = firstReq->request.version;
     batch.requests.push_back(std::move(*firstReq));
-
     const auto deadline = batch.creationTime + batchTimeoutMs;
 
     while(batch.requests.size() < maxBatchSize){
-        auto now = Clock::now();
+        auto now = PredictionBatch::Clock::now();
 
         if(now >= deadline){
             break;
@@ -41,7 +53,7 @@ std::optional<PredictionBatch> BatchManager::getBatch(){
             break;
         }
 
-        if(!isCompatiable(batch, *maybeNext)){
+        if(!isCompatible(batch, maybeNext->get())){
             break;
         }
 
@@ -50,10 +62,12 @@ std::optional<PredictionBatch> BatchManager::getBatch(){
         if(!nextRequest.has_value()){
             break;
         }
-
         batch.requests.push_back(std::move(*nextRequest));
     }
-    batch.dispatchTime = Clock::now();
+
+    batch.dispatchTime = PredictionBatch::Clock::now();
+    metricsReg.recordBatch(batch.requests.size());
+    metricsReg.recordBatchWaitMs(elapsedMilliseconds(batch.creationTime, batch.dispatchTime));
     return batch;
 }
 

@@ -21,8 +21,8 @@ struct QueuedRequest {
     using Clock = std::chrono::steady_clock;
     std::uint64_t requestId = 0;
     PredictionRequest request;
-    Clock::time_point queueTime;
-    std::optional<Clock::time_point> processingStartTime;
+    Clock::time_point creationTime;
+    std::optional<Clock::time_point> startTime;
     std::optional<Clock::time_point> finishTime;
     RequestStatus status = RequestStatus::Queued;
     std::optional<std::string> errorMessage;

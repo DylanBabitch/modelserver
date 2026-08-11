@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <future>
+#include <functional>
 #include <optional>
 #include <chrono>
 #include <cstdint>
@@ -19,10 +20,13 @@ private:
     std::uint64_t currId = 0;
     bool shutdown = false;
 public:
-    std::future<PredictionResponse> push(PredictionRequest request);
+    std::future<PredictionResponse> push(
+        PredictionRequest request,
+        QueuedRequest::Clock::time_point creationTime = QueuedRequest::Clock::now());
     std::optional<QueuedRequest> popBlocking();
     std::optional<QueuedRequest> popNonBlocking();
-    std::optional<QueuedRequest&> peakUntil(const std::chrono::steady_clock::time_point endTime);
+    std::optional<std::reference_wrapper<QueuedRequest>> peakUntil(
+        const std::chrono::steady_clock::time_point endTime);
     std::size_t size() const;
     bool empty() const;
     void setShutdown();

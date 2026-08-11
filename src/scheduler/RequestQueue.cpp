@@ -5,7 +5,9 @@
 #include <cstdint>
 #include <optional>
 
-std::future<PredictionResponse> RequestQueue::push(PredictionRequest request){
+std::future<PredictionResponse> RequestQueue::push(
+    PredictionRequest request,
+    QueuedRequest::Clock::time_point creationTime){
     //check shutdown
     //Make the Queued Request
     std::unique_lock<std::mutex> lock(mtx);
@@ -20,7 +22,7 @@ std::future<PredictionResponse> RequestQueue::push(PredictionRequest request){
     auto future = prom.get_future();
 
     requests.emplace(currId, std::move(request),
-                    std::chrono::steady_clock::now(), 
+                    creationTime,
                     std::nullopt, std::nullopt,
                     QueuedRequest::RequestStatus::Queued, 
                     std::nullopt, std::move(prom));
@@ -57,16 +59,17 @@ std::optional<QueuedRequest> RequestQueue::popNonBlocking(){
     return request;
 }
 
-std::optional<QueuedRequest&> RequestQueue::peakUntil(const std::chrono::steady_clock::time_point endTime){
+std::optional<std::reference_wrapper<QueuedRequest>> RequestQueue::peakUntil(
+    const std::chrono::steady_clock::time_point endTime){
     std::unique_lock<std::mutex> lock(mtx);
 
-    cv.wait(lock, [this, endTime]{return (shutdown || std::chrono::steady_clock::now() > endTime || !requests.empty());});
+    cv.wait_until(lock, endTime, [this] { return shutdown || !requests.empty(); });
 
-    if(std::chrono::steady_clock::now() > endTime || (shutdown && requests.empty())){
+    if (requests.empty()) {
         return std::nullopt;
     }
 
-    return requests.front();
+    return std::ref(requests.front());
 }
 
 std::size_t RequestQueue::size() const{
@@ -92,4 +95,3 @@ bool RequestQueue::isShutdown() const{
     std::lock_guard<std::mutex> lock(mtx);
     return shutdown;
 }
-

@@ -1,251 +1,295 @@
 #include "server/HttpServer.hpp"
-#include "request/PredictionRequest.hpp"
-#include "model/ModelRegistry.hpp"
+
 #include "metrics/Timer.hpp"
-#include "scheduler/RequestQueue.hpp"
-#include "scheduler/WorkerPool.hpp"
 #include "model/DummyRuntime.hpp"
+#include "request/PredictionRequest.hpp"
 
-#include <crow.h>
-#include <string>
-#include <unordered_map>
-#include <vector>
-#include <memory>
 #include <chrono>
-#include <cstdint>
+#include <future>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
-HttpServer::HttpServer(ModelRegistry& modelReg, MetricsRegistry& metricsReg, RequestQueue& reqQueue) : modelReg(modelReg), metricsReg(metricsReg), reqQueue(reqQueue){}
+namespace {
 
-void HttpServer::run(){
+class ActiveRequestGuard {
+private:
+    MetricsRegistry& metricsReg;
+
+public:
+    explicit ActiveRequestGuard(MetricsRegistry& metricsReg) : metricsReg(metricsReg) {
+        metricsReg.incrementActiveRequests();
+    }
+
+    ~ActiveRequestGuard() {
+        metricsReg.decrementActiveRequests();
+    }
+};
+
+double elapsedMilliseconds(
+    const QueuedRequest::Clock::time_point start,
+    const QueuedRequest::Clock::time_point finish)
+{
+    return std::chrono::duration<double, std::milli>(finish - start).count();
+}
+
+} // namespace
+
+HttpServer::HttpServer(ModelRegistry& modelReg, MetricsRegistry& metricsReg, RequestQueue& reqQueue)
+    : modelReg(modelReg), metricsReg(metricsReg), reqQueue(reqQueue) {}
+
+void HttpServer::run() {
     crow::SimpleApp app;
 
-    this->registerHealthRoute(app);
-    this->registerPredictRoute(app);
-    this->registerModelRegisterRoute(app);
-    this->registerMetricsRoute(app);
-    this->registerModelRoute(app);
+    registerHealthRoute(app);
+    registerPredictRoute(app);
+    registerModelRegisterRoute(app);
+    registerMetricsRoute(app);
+    registerModelRoute(app);
 
     app.port(8080).run();
 }
 
-void HttpServer::registerHealthRoute(crow::SimpleApp& app){
+void HttpServer::registerHealthRoute(crow::SimpleApp& app) {
     CROW_ROUTE(app, "/health")
-    ([](crow::response& res){
-        crow::json::wvalue x;
-        x["status"] = "ok";
+    ([](crow::response& res) {
+        crow::json::wvalue response;
+        response["status"] = "ok";
 
-        res.body = x.dump() + "\n";
+        res.body = response.dump() + "\n";
         res.add_header("Content-Type", "application/json");
         res.add_header("Cache-Control", "no-store");
         res.end();
     });
 }
 
-void HttpServer::registerPredictRoute(crow::SimpleApp& app){
+void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
     CROW_ROUTE(app, "/predict").methods(crow::HTTPMethod::POST)
-    ([this](crow::request& req, crow::response& res){
-        Timer t;
-        crow::json::rvalue req_data = crow::json::load(req.body); 
-    
-        metricsReg.addActiveRequest();
+    ([this](crow::request& req, crow::response& res) {
+        Timer requestTimer;
+        ActiveRequestGuard activeRequest(metricsReg);
+        crow::json::rvalue reqData = crow::json::load(req.body);
 
-        //make sure request is well formatted
-        crow::response valid_request = this->checkPrediction(req_data);
-        if(valid_request.code != 200){
+        crow::response validationResponse = checkPrediction(reqData);
+        if (validationResponse.code != 200) {
+            metricsReg.recordValidationError();
+            metricsReg.recordRequestFailure();
+
             crow::json::wvalue error;
-            error["error"] = valid_request.body;
-            error["request_latency_ms"] = t.end();
+            error["error"] = validationResponse.body;
+            error["request_latency_ms"] = requestTimer.end();
             error["inference_latency_ms"] = nullptr;
+            validationResponse.body = error.dump() + "\n";
+            validationResponse.add_header("Content-Type", "application/json");
 
-            valid_request.body = error.dump() + "\n";
-            valid_request.add_header("Content-Type", "application/json");
-
-            res = std::move(valid_request);
+            res = std::move(validationResponse);
             res.end();
-            metricsReg.addFailedRequest();
             return;
         }
-        
-        //make sure model and version exists;
-        std::string model = req_data["model"].s();
-        std::string version = req_data["version"].s();
 
-        ModelRuntime* runtime = modelReg.getRuntime(model, version);
-        crow::json::wvalue x;
-        if(!runtime){
-            x["error"] = "Runtime does not exist";
-            double req_latency = t.end();
-            x["request_latency_ms"] = req_latency;
-            x["inference_latency_ms"] = nullptr;
-            metricsReg.addFailedRequest();
-            res.code = 400;
-        }else{
-            PredictionRequest pReq(model, version, req_data["input"].s());
-            try{
-                std::future<PredictionResponse> pRespFut = reqQueue.push(pReq);
-                PredictionResponse pResp = pRespFut.get();
-                x["model"] = pResp.model;
-                x["version"] = pResp.version;
-                x["prediction"] = pResp.prediction;
-                x["confidence"] = pResp.confidence;
-                x["inference_latency_ms"] = pResp.latency_ms;
+        const std::string model = reqData["model"].s();
+        const std::string version = reqData["version"].s();
+        crow::json::wvalue response;
 
-                metricsReg.addInferenceLatency(pResp.latency_ms);
-                double req_latency = t.end();
-                x["request_latency_ms"] = req_latency;
-                metricsReg.addPrediction(req_latency);
-                metricsReg.addSuccessfulRequest();
+        if (!modelReg.checkModel(model)) {
+            metricsReg.recordModelNotFoundError();
+            metricsReg.recordRequestFailure();
+            response["error"] = "Model does not exist";
+            response["request_latency_ms"] = requestTimer.end();
+            response["inference_latency_ms"] = nullptr;
+            res.code = 404;
+        } else if (!modelReg.checkVersion(model, version)) {
+            metricsReg.recordVersionNotFoundError();
+            metricsReg.recordRequestFailure();
+            response["error"] = "Model version does not exist";
+            response["request_latency_ms"] = requestTimer.end();
+            response["inference_latency_ms"] = nullptr;
+            res.code = 404;
+        } else {
+            const auto creationTime = QueuedRequest::Clock::now();
+            PredictionRequest predictionRequest{model, version, reqData["input"].s()};
+
+            try {
+                std::future<PredictionResponse> predictionFuture =
+                    reqQueue.push(std::move(predictionRequest), creationTime);
+                PredictionResponse predictionResponse = predictionFuture.get();
+
+                response["model"] = predictionResponse.model;
+                response["version"] = predictionResponse.version;
+                response["prediction"] = predictionResponse.prediction;
+                response["confidence"] = predictionResponse.confidence;
+                response["inference_latency_ms"] = predictionResponse.inference_latency_ms;
+                response["queue_wait_ms"] = predictionResponse.queue_wait_ms;
+                response["batch_wait_ms"] = predictionResponse.batch_wait_ms;
+
+                const double requestLatencyMs =
+                    elapsedMilliseconds(creationTime, QueuedRequest::Clock::now());
+                response["request_latency_ms"] = requestLatencyMs;
+                metricsReg.recordRequestLatencyMs(requestLatencyMs);
+                metricsReg.recordRequestSuccess();
                 res.code = 200;
-            } catch(...){//TODO figure out exact errors later
-                x["error"] = "Prediction Failed";
-                double req_latency = t.end();
-                x["request_latency_ms"] = req_latency;
-                x["inference_latency_ms"] = nullptr;
-                metricsReg.addFailedRequest();
+            } catch (...) {
+                metricsReg.recordRequestFailure();
+                response["error"] = "Prediction Failed";
+                response["request_latency_ms"] =
+                    elapsedMilliseconds(creationTime, QueuedRequest::Clock::now());
+                response["inference_latency_ms"] = nullptr;
                 res.code = 500;
             }
-            
         }
-        
 
-        
-
-        
-
-        res.body = x.dump() + "\n";
+        res.body = response.dump() + "\n";
         res.add_header("Content-Type", "application/json");
         res.end();
-        
     });
 }
 
-void HttpServer::registerModelRoute(crow::SimpleApp& app){
+void HttpServer::registerModelRoute(crow::SimpleApp& app) {
     CROW_ROUTE(app, "/models")
     ([this](crow::response& res) {
         const std::vector<ModelSummary> models = modelReg.getAvailableModels();
 
         crow::json::wvalue::list modelsJson;
         modelsJson.reserve(models.size());
-
-        for(const ModelSummary& model : models){
+        for (const ModelSummary& model : models) {
             crow::json::wvalue modelJson;
             modelJson["name"] = model.name;
             modelJson["versions"] = model.versions;
             modelsJson.emplace_back(std::move(modelJson));
         }
 
-        crow::json::wvalue responseJson;
-        responseJson["models"] = std::move(modelsJson);
-
-        res.body = responseJson.dump() + "\n";
+        crow::json::wvalue response;
+        response["models"] = std::move(modelsJson);
+        res.body = response.dump() + "\n";
         res.add_header("Content-Type", "application/json");
         res.end();
     });
 }
 
-void HttpServer::registerMetricsRoute(crow::SimpleApp& app){
+crow::json::wvalue HttpServer::buildMetricsResponse() const {
+    crow::json::wvalue response;
+
+    response["requests"]["total"] = metricsReg.getRequestsTotal();
+    response["requests"]["successful"] = metricsReg.getRequestsSuccessful();
+    response["requests"]["failed"] = metricsReg.getRequestsFailed();
+    response["requests"]["active"] = metricsReg.getActiveRequests();
+    response["predictions"]["total"] = metricsReg.getPredictionsTotal();
+    response["models"]["registered_total"] = metricsReg.getModelsRegisteredTotal();
+
+    response["latency_ms"]["request"]["avg"] = metricsReg.getAverageRequestLatencyMs();
+    response["latency_ms"]["request"]["p50"] = metricsReg.getRequestP50LatencyMs();
+    response["latency_ms"]["request"]["p95"] = metricsReg.getRequestP95LatencyMs();
+    response["latency_ms"]["inference"]["avg"] = metricsReg.getAverageInferenceLatencyMs();
+    response["latency_ms"]["inference"]["p50"] = metricsReg.getInferenceP50LatencyMs();
+    response["latency_ms"]["inference"]["p95"] = metricsReg.getInferenceP95LatencyMs();
+    response["latency_ms"]["queue_wait"]["avg"] = metricsReg.getAverageQueueWaitMs();
+    response["latency_ms"]["queue_wait"]["p50"] = metricsReg.getQueueWaitP50Ms();
+    response["latency_ms"]["queue_wait"]["p95"] = metricsReg.getQueueWaitP95Ms();
+    response["latency_ms"]["batch_wait"]["avg"] = metricsReg.getAverageBatchWaitMs();
+    response["latency_ms"]["batch_wait"]["p50"] = metricsReg.getBatchWaitP50Ms();
+    response["latency_ms"]["batch_wait"]["p95"] = metricsReg.getBatchWaitP95Ms();
+
+    response["batching"]["batches_total"] = metricsReg.getBatchesTotal();
+    response["batching"]["requests_batched_total"] = metricsReg.getRequestsBatchedTotal();
+    response["batching"]["average_batch_size"] = metricsReg.getAverageBatchSize();
+    response["batching"]["max_observed_batch_size"] = metricsReg.getMaxObservedBatchSize();
+
+    response["errors"]["validation_errors_total"] = metricsReg.getValidationErrorsTotal();
+    response["errors"]["model_not_found_errors_total"] = metricsReg.getModelNotFoundErrorsTotal();
+    response["errors"]["version_not_found_errors_total"] = metricsReg.getVersionNotFoundErrorsTotal();
+    response["errors"]["runtime_errors_total"] = metricsReg.getRuntimeErrorsTotal();
+
+    return response;
+}
+
+void HttpServer::registerMetricsRoute(crow::SimpleApp& app) {
     CROW_ROUTE(app, "/metrics")
-    ([this](crow::response& res){
-        crow::json::wvalue x;
-        x["total_reqs"] = metricsReg.getRequestsTotal();
-        x["successful_reqs"] = metricsReg.getRequestsSuccessful();
-        x["failed_reqs"] = metricsReg.getRequestsFailed();
-        x["average_request_latency"] = metricsReg.getAverageRequestLatency();
-        x["average_inference_latency"] = metricsReg.getAverageInferenceLatency();
-        auto [req_p50_latency, infer_p50_latency] = metricsReg.getP50Latency();
-        auto [req_p95_latency, infer_p95_latency] = metricsReg.getP95Latency();
-        x["request_p50_latency"] = req_p50_latency;
-        x["request_p95_latency"] = req_p95_latency;
-        x["inference_p50_latency"] = infer_p50_latency;
-        x["inference_p95_latency"] = infer_p95_latency;
-
-        res.body = x.dump() + "\n";
+    ([this](crow::response& res) {
+        crow::json::wvalue response = buildMetricsResponse();
+        res.body = response.dump() + "\n";
         res.add_header("Content-Type", "application/json");
         res.end();
     });
 }
 
-void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app){
-    //TODO add path and runtime to request
+void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app) {
     CROW_ROUTE(app, "/models/register").methods(crow::HTTPMethod::POST)
-    ([this](crow::request& req, crow::response& res){
-        crow::json::rvalue req_data = crow::json::load(req.body);
-
-        //check the request formatting
-        crow::response formatCheck = this->checkModelRegister(req_data);
-        if(formatCheck.code != 200){
+    ([this](crow::request& req, crow::response& res) {
+        crow::json::rvalue reqData = crow::json::load(req.body);
+        crow::response formatCheck = checkModelRegister(reqData);
+        if (formatCheck.code != 200) {
             res = std::move(formatCheck);
             res.end();
             return;
         }
 
-        std::string name = req_data["name"].s();
-        std::string version = req_data["version"].s();
-        std::string path = "dummypath/"; //make this a real path
-        auto dummyRuntime = std::make_unique<DummyRuntime>();
+        const std::string name = reqData["name"].s();
+        const std::string version = reqData["version"].s();
+        auto runtime = std::make_unique<DummyRuntime>();
 
-        //register model
-        if(!modelReg.addModel(name, version, path, std::move(dummyRuntime))){
+        if (!modelReg.addModel(name, version, "dummypath/", std::move(runtime))) {
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
             return;
         }
-        metricsReg.addRegisteredModel();
+
+        metricsReg.recordModelRegistration();
         res.code = 200;
         res.body = "Model Added Successfully\n";
         res.end();
     });
 }
 
-crow::response HttpServer::checkPrediction(crow::json::rvalue& req_data){
-    //Make sure request is valid JSON
-    if(!req_data){
+crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
+    if (!reqData) {
         return crow::response(400, "Invalid JSON Body");
-    } 
+    }
 
-    //Check if req has all required fields
-    if(!req_data.has("model")){
+    if (!reqData.has("model")) {
         return crow::response(400, "Missing required field: model");
-    } else if(!req_data.has("version")){
+    }
+    if (!reqData.has("version")) {
         return crow::response(400, "Missing required field: version");
-    } else if(!req_data.has("input")){
+    }
+    if (!reqData.has("input")) {
         return crow::response(400, "Missing required field: input");
     }
 
-    //Check field types
-    if(req_data["model"].t() != crow::json::type::String){
+    if (reqData["model"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'model' must be a string");
-    } else if(req_data["version"].t() != crow::json::type::String){
+    }
+    if (reqData["version"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'version' must be a string");
-    } else if(req_data["input"].t() != crow::json::type::String){
+    }
+    if (reqData["input"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'input' must be a string");
     }
-
 
     return crow::response(200, "Well Formatted");
 }
 
-crow::response HttpServer::checkModelRegister(crow::json::rvalue& req_data){
-    //TODO add checks 
-    if(!req_data){
+crow::response HttpServer::checkModelRegister(crow::json::rvalue& reqData) {
+    if (!reqData) {
         return crow::response(400, "Invalid JSON Body");
     }
-
-    if(!req_data.has("name")){
+    if (!reqData.has("name")) {
         return crow::response(400, "Missing required field: name");
-    } else if(!req_data.has("version")){
+    }
+    if (!reqData.has("version")) {
         return crow::response(400, "Missing required field: version");
     }
-
-    if(req_data["name"].t() != crow::json::type::String){
+    if (reqData["name"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'name' must be a string");
-    } else if(req_data["version"].t() != crow::json::type::String){
+    }
+    if (reqData["version"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'version' must be a string");
     }
-    if(req_data["name"].size() == 0){
+    if (reqData["name"].size() == 0) {
         return crow::response(400, "Field name must be non-empty");
-    } else if(req_data["version"].size() == 0){
+    }
+    if (reqData["version"].size() == 0) {
         return crow::response(400, "Field version must be non-empty");
     }
 

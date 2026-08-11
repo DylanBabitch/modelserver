@@ -15,6 +15,7 @@ class WorkerPool{
 private:
     BatchManager& batchManager;
     ModelRegistry& modelReg;
+    MetricsRegistry& metricsReg;
 
     std::size_t workerCount;
     std::vector<std::thread> workers;
@@ -26,7 +27,7 @@ private:
 
     void workerLoop();
 public:
-    WorkerPool(std::size_t numWorkers, BatchManager& reqQueue, ModelRegistry& modelReg);
+    WorkerPool(std::size_t numWorkers, BatchManager& reqQueue, ModelRegistry& modelReg, MetricsRegistry& metricsReg);
     ~WorkerPool();
     void start();
     void stop();

@@ -2,6 +2,7 @@
 
 #include "scheduler/RequestQueue.hpp"
 #include "scheduler/QueuedRequest.hpp"
+#include "metrics/MetricsRegistry.hpp"
 
 #include <cstddef>
 #include <queue>
@@ -12,16 +13,15 @@
 #include <vector>
 #include <mutex>
 
-#define Clock std::chrono::steady_clock
-
 struct PredictionBatch {
+    using Clock = std::chrono::steady_clock;
+
     std::uint64_t batchId;
 
     std::string model;
     std::string version;
 
     std::vector<QueuedRequest> requests;
-
     Clock::time_point creationTime;
     Clock::time_point dispatchTime;
 };
@@ -31,14 +31,14 @@ private:
     std::size_t maxBatchSize; //TODO test this param
     std::chrono::milliseconds batchTimeoutMs; //TODO test this param
     RequestQueue& reqQueue;
+    MetricsRegistry& metricsReg;
     bool isShutdown = false;
-    void managerLoop();
     mutable std::mutex mtx;
-    bool isCompatiable(PredictionBatch& batch, QueuedRequest& nextReq);
+    bool isCompatible(const PredictionBatch& batch, const QueuedRequest& nextReq) const;
 public:
     
 
-    BatchManager(RequestQueue& reqQueue, std::size_t maxBatchSize = 8, std::chrono::milliseconds batchTimeoutMs = std::chrono::milliseconds(10));
+    BatchManager(RequestQueue& reqQueue, MetricsRegistry& metricsReg, std::size_t maxBatchSize = 8, std::chrono::milliseconds batchTimeoutMs = std::chrono::milliseconds(10));
     std::optional<PredictionBatch> getBatch();
     void shutdown();
     std::size_t getMaxBatchSize() const;

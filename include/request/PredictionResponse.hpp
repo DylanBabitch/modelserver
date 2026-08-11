@@ -7,5 +7,7 @@ struct PredictionResponse{
     std::string version;
     std::string prediction;
     double confidence = 0.0;
-    double latency_ms = 0.0;
+    double inference_latency_ms = 0.0;
+    double queue_wait_ms = 0.0;
+    double batch_wait_ms = 0.0;
 };

@@ -1,240 +1,245 @@
 #include "metrics/MetricsRegistry.hpp"
-#include <utility>
+
 #include <algorithm>
 #include <cmath>
-#include <mutex>
 
-int MetricsRegistry::getRequestsTotal() const{
-    std::lock_guard<std::mutex> guard(mtx);
-    return requests_total;
+double MetricsRegistry::median(std::vector<double> values) {
+    if (values.empty()) {
+        return 0.0;
+    }
+
+    const std::size_t middle = values.size() / 2;
+    std::nth_element(values.begin(), values.begin() + middle, values.end());
+    const double upper_middle = values[middle];
+
+    if (values.size() % 2 != 0) {
+        return upper_middle;
+    }
+
+    const double lower_middle = *std::max_element(values.begin(), values.begin() + middle);
+    return (lower_middle + upper_middle) / 2.0;
 }
-int MetricsRegistry::getRequestsSuccessful() const{
-    std::lock_guard<std::mutex> guard(mtx);
+
+double MetricsRegistry::percentile95(std::vector<double> values) {
+    if (values.empty()) {
+        return 0.0;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(std::ceil(values.size() * 0.95)) - 1;
+    std::nth_element(values.begin(), values.begin() + index, values.end());
+    return values[index];
+}
+
+std::size_t MetricsRegistry::getRequestsTotal() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return requests_successful + requests_failed;
+}
+
+std::size_t MetricsRegistry::getRequestsSuccessful() const {
+    std::lock_guard<std::mutex> lock(mtx);
     return requests_successful;
 }
-int MetricsRegistry::getRequestsFailed() const{
-    std::lock_guard<std::mutex> guard(mtx);
+
+std::size_t MetricsRegistry::getRequestsFailed() const {
+    std::lock_guard<std::mutex> lock(mtx);
     return requests_failed;
 }
-int MetricsRegistry::getPredictionsTotal() const{
-    std::lock_guard<std::mutex> guard(mtx);
-    return predictions_total;
-}
-int MetricsRegistry::getModelsRegisteredTotal() const{
-    std::lock_guard<std::mutex> guard(mtx);
-    return models_registered_total;
-}
 
-int MetricsRegistry::getActiveRequests() const{
-    std::lock_guard<std::mutex> guard(mtx);
+std::size_t MetricsRegistry::getActiveRequests() const {
+    std::lock_guard<std::mutex> lock(mtx);
     return active_requests;
 }
 
-void MetricsRegistry::addFailedRequest(){
-    std::lock_guard<std::mutex> guard(mtx);
-    ++requests_failed;
-    --active_requests;
-    ++requests_total;
-}
-void MetricsRegistry::addSuccessfulRequest(){
-    std::lock_guard<std::mutex> guard(mtx);
-    ++requests_successful;
-    --active_requests;
-    ++requests_total;
-}
-void MetricsRegistry::addPrediction(double latency){
-    std::lock_guard<std::mutex> guard(mtx);
-    request_latencies.push_back(latency);
-    total_request_latency += latency;
-    ++predictions_total;
-}
-
-void MetricsRegistry::addInferenceLatency(double latency){
-    std::lock_guard<std::mutex> guard(mtx);
-    inference_latencies.push_back(latency);
-    total_inference_latency += latency;
-}
-
-void MetricsRegistry::addRegisteredModel(){
-    std::lock_guard<std::mutex> guard(mtx);
-    ++models_registered_total;
-}
-
-void MetricsRegistry::addActiveRequest(){
-    std::lock_guard<std::mutex> guard(mtx);
-    ++active_requests;
-}
-
-double MetricsRegistry::getAverageRequestLatency() const {
-    std::lock_guard<std::mutex> guard(mtx);
-    if(request_latencies.empty()) return 0.0;
-    return total_request_latency / request_latencies.size();
-}
-double MetricsRegistry::getAverageInferenceLatency() const{
-    std::lock_guard<std::mutex> guard(mtx);
-    if(inference_latencies.empty()) return 0.0;
-    return total_inference_latency / inference_latencies.size();
-}
-
-int MetricsRegistry::getQueuedRequests() const{
+std::size_t MetricsRegistry::getPredictionsTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
-    return queued_requests;
+    return predictions_total;
 }
 
-int MetricsRegistry::getTotalBatches() const{
+std::size_t MetricsRegistry::getModelsRegisteredTotal() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return models_registered_total;
+}
+
+double MetricsRegistry::getAverageRequestLatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return request_latencies_ms.empty() ? 0.0 : total_request_latency_ms / request_latencies_ms.size();
+}
+
+double MetricsRegistry::getRequestP50LatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return median(request_latencies_ms);
+}
+
+double MetricsRegistry::getRequestP95LatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return percentile95(request_latencies_ms);
+}
+
+double MetricsRegistry::getAverageInferenceLatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return inference_latencies_ms.empty() ? 0.0 : total_inference_latency_ms / inference_latencies_ms.size();
+}
+
+double MetricsRegistry::getInferenceP50LatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return median(inference_latencies_ms);
+}
+
+double MetricsRegistry::getInferenceP95LatencyMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return percentile95(inference_latencies_ms);
+}
+
+double MetricsRegistry::getAverageQueueWaitMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return queue_wait_latencies_ms.empty() ? 0.0 : total_queue_wait_ms / queue_wait_latencies_ms.size();
+}
+
+double MetricsRegistry::getQueueWaitP50Ms() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return median(queue_wait_latencies_ms);
+}
+
+double MetricsRegistry::getQueueWaitP95Ms() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return percentile95(queue_wait_latencies_ms);
+}
+
+std::size_t MetricsRegistry::getBatchesTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
     return batches_total;
 }
 
-int MetricsRegistry::getTotalRuntimeErrors() const{
+std::size_t MetricsRegistry::getRequestsBatchedTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
-    return runtime_errors_total;
+    return requests_batched_total;
 }
 
-int MetricsRegistry::getTotalValidationErrors() const{
+double MetricsRegistry::getAverageBatchSize() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return batch_sizes.empty() ? 0.0 : static_cast<double>(requests_batched_total) / batch_sizes.size();
+}
+
+std::size_t MetricsRegistry::getMaxObservedBatchSize() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return max_observed_batch_size;
+}
+
+double MetricsRegistry::getAverageBatchWaitMs() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return batch_wait_latencies_ms.empty() ? 0.0 : total_batch_wait_ms / batch_wait_latencies_ms.size();
+}
+
+double MetricsRegistry::getBatchWaitP50Ms() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return median(batch_wait_latencies_ms);
+}
+
+double MetricsRegistry::getBatchWaitP95Ms() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return percentile95(batch_wait_latencies_ms);
+}
+
+std::size_t MetricsRegistry::getValidationErrorsTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
     return validation_errors_total;
 }
 
-int MetricsRegistry::getTotalMNFErrors() const{
+std::size_t MetricsRegistry::getModelNotFoundErrorsTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
     return model_not_found_errors_total;
 }
 
-int MetricsRegistry::getTotalVNFErrors() const{
+std::size_t MetricsRegistry::getVersionNotFoundErrorsTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
     return version_not_found_errors_total;
 }
 
-double MetricsRegistry::getAverageQueueWaitTime() const{
+std::size_t MetricsRegistry::getRuntimeErrorsTotal() const {
     std::lock_guard<std::mutex> lock(mtx);
-    if(queued_wait_latencies.empty()) return 0.0;
-    return total_queued_wait / queued_wait_latencies.size();
+    return runtime_errors_total;
 }
 
-double MetricsRegistry::getAverageBatchSize() const{
+void MetricsRegistry::recordRequestSuccess() {
     std::lock_guard<std::mutex> lock(mtx);
-    if(batch_sizes.empty()) return 0.0;
-    return total_batched_requests / batch_sizes.size();
+    ++requests_successful;
 }
 
-double MetricsRegistry::getAverageBatchWaitTime() const{
+void MetricsRegistry::recordRequestFailure() {
     std::lock_guard<std::mutex> lock(mtx);
-    if(batch_wait_latencies.empty()) return 0.0;
-    return total_batch_wait_latnecy / batch_wait_latencies.size();
+    ++requests_failed;
 }
 
-void MetricsRegistry::addQueuedRequest(){
+void MetricsRegistry::incrementActiveRequests() {
     std::lock_guard<std::mutex> lock(mtx);
-    queued_requests++;
+    ++active_requests;
 }
 
-void MetricsRegistry::addQueueWaitLatency(double latency){
+void MetricsRegistry::decrementActiveRequests() {
     std::lock_guard<std::mutex> lock(mtx);
-    total_queued_wait += latency;
-    queued_wait_latencies.push_back(latency);
-}
-
-void MetricsRegistry::addBatch(int batchSize){
-    std::lock_guard<std::mutex> lock(mtx);
-    total_batched_requests += batchSize;
-    batches_total++;
-}
-
-void MetricsRegistry::addBatchLatency(double latency){
-    std::lock_guard<std::mutex> lock(mtx);
-    total_batch_wait_latnecy += latency;
-    batch_wait_latencies.push_back(latency);
-}
-
-void MetricsRegistry::addRuntimeError(){
-    std::lock_guard<std::mutex> lock(mtx);
-    runtime_errors_total++;
-}
-
-void MetricsRegistry::addValidationError(){
-    std::lock_guard<std::mutex> lock(mtx);
-    validation_errors_total++;
-}
-
-void MetricsRegistry::addMNFError(){
-    std::lock_guard<std::mutex> lock(mtx);
-    model_not_found_errors_total++;
-}
-
-void MetricsRegistry::addVNFError(){
-    std::lock_guard<std::mutex> lock(mtx);
-    version_not_found_errors_total++;
-}
-
-double MetricsRegistry::getP50Latency(std::vector<double>& latencies){
-    //asume caller has lock on mutex
-    if(latencies.size() != 0){
-        std::size_t n = latencies.size();
-        std::size_t mid = n /2;
-        //get inference latency
-        std::nth_element(latencies.begin(), latencies.begin() + mid, latencies.end());
-        if(n % 2 == 1){
-            return latencies[mid];
-        } else{
-            auto max_prev = std::max_element(latencies.begin(), latencies.begin() + mid);
-            return latencies[mid] - (latencies[mid] - *max_prev) / 2;
-        }
+    if (active_requests > 0) {
+        --active_requests;
     }
-
-    return -1; 
 }
 
-/*
-    Returns RequestP50 Latency}. If there are no latencies for request and/or inference available, the function returns -1 for the respective latency.
-*/
-double MetricsRegistry::getRequestP50Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP50Latency(request_latencies);
-}   
-
-double MetricsRegistry::getInferenceP50Latency() {
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP50Latency(inference_latencies);
+void MetricsRegistry::addPredictions(std::size_t count) {
+    std::lock_guard<std::mutex> lock(mtx);
+    predictions_total += count;
 }
 
-double MetricsRegistry::getBatchP50Latency() {
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP50Latency(batch_wait_latencies);
+void MetricsRegistry::recordModelRegistration() {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++models_registered_total;
 }
 
-double MetricsRegistry::getQueueP50Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP50Latency(queued_wait_latencies);
+void MetricsRegistry::recordRequestLatencyMs(double latency_ms) {
+    std::lock_guard<std::mutex> lock(mtx);
+    request_latencies_ms.push_back(latency_ms);
+    total_request_latency_ms += latency_ms;
 }
 
-
-double MetricsRegistry::getP95Latency(std::vector<double>& latencies){
-    if(latencies.size() != 0){
-        std::size_t idx = static_cast<std::size_t>(std::ceil(0.95 * latencies.size())) - 1;
-        //get request latency
-        std::nth_element(latencies.begin(), latencies.begin() + idx, latencies.end());
-        return latencies[idx];
-    } 
-    return -1;
+void MetricsRegistry::recordInferenceLatencyMs(double latency_ms) {
+    std::lock_guard<std::mutex> lock(mtx);
+    inference_latencies_ms.push_back(latency_ms);
+    total_inference_latency_ms += latency_ms;
 }
 
-double MetricsRegistry::getRequestP95Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP95Latency(request_latencies);
+void MetricsRegistry::recordQueueWaitMs(double latency_ms) {
+    std::lock_guard<std::mutex> lock(mtx);
+    queue_wait_latencies_ms.push_back(latency_ms);
+    total_queue_wait_ms += latency_ms;
 }
 
-double MetricsRegistry::getInferenceP95Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP95Latency(inference_latencies);
+void MetricsRegistry::recordBatch(std::size_t batch_size) {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++batches_total;
+    requests_batched_total += batch_size;
+    max_observed_batch_size = std::max(max_observed_batch_size, batch_size);
+    batch_sizes.push_back(batch_size);
 }
 
-double MetricsRegistry::getBatchP95Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP95Latency(batch_wait_latencies);
+void MetricsRegistry::recordBatchWaitMs(double latency_ms) {
+    std::lock_guard<std::mutex> lock(mtx);
+    batch_wait_latencies_ms.push_back(latency_ms);
+    total_batch_wait_ms += latency_ms;
 }
 
-double MetricsRegistry::getQueueP95Latency(){
-    std::lock_guard<std::mutex> guard(mtx);
-    return getP95Latency(queued_wait_latencies);
+void MetricsRegistry::recordValidationError() {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++validation_errors_total;
+}
+
+void MetricsRegistry::recordModelNotFoundError() {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++model_not_found_errors_total;
+}
+
+void MetricsRegistry::recordVersionNotFoundError() {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++version_not_found_errors_total;
+}
+
+void MetricsRegistry::recordRuntimeError() {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++runtime_errors_total;
 }

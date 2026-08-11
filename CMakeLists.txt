@@ -49,10 +49,15 @@ add_executable(modelserver_tests
     tests/metrics_tests.cpp
     tests/model_registry_tests.cpp
     tests/request_queue_tests.cpp
+    tests/batch_manager_tests.cpp
     tests/worker_pool_tests.cpp
+    tests/http_server_tests.cpp
 
     src/metrics/MetricsRegistry.cpp
+    src/metrics/Timer.cpp
+    src/model/DummyRuntime.cpp
     src/model/ModelRegistry.cpp
+    src/server/HttpServer.cpp
     src/scheduler/RequestQueue.cpp
     src/scheduler/WorkerPool.cpp
     src/scheduler/BatchManager.cpp

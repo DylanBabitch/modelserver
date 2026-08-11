@@ -22,5 +22,6 @@ class HttpServer{
     void registerMetricsRoute(crow::SimpleApp& app);
 public:
     HttpServer(ModelRegistry& modelReg, MetricsRegistry& metricsReg, RequestQueue& reqQueue);
+    crow::json::wvalue buildMetricsResponse() const;
     void run();
 };
