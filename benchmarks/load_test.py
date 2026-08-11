@@ -5,7 +5,6 @@ import time
 import argparse
 import json
 import os
-import requests
 
 
 async def main():
@@ -23,28 +22,31 @@ async def main():
 
     args = parser.parse_args()
 
-    url = args.url + "/predict"
+    base_url = args.url.rstrip("/")
+    url = base_url + "/predict"
     num_clients = args.numClients
     num_tasks = args.numTasks
     output_file = args.outputFileDestination
 
-    payload = {
+    registration_payload = {
         "name": "test model",
         "version": "v1"
     }
-    #TODO add model before sending it
-    requests.post(args.url + "/models/register", json=payload)
 
-    #use dummy payload with no model and version for now
     payload = {
         "model": "test model",
         "version": "v1",
         "input": "test"
     }
-    
+
     try:
+        await register_model(base_url, registration_payload)
         await t.run(url, payload, num_clients, num_tasks)
+        server_metrics = await fetch_metrics(base_url)
     except ValueError as e:
+        print(e)
+        return
+    except RuntimeError as e:
         print(e)
         return
 
@@ -63,7 +65,8 @@ async def main():
         "average_latency_ms": avg_latency,
         "p50_latency_ms": p50_latency,
         "p95_latency_ms": p95_latency,
-        "requests_per_second": req_per_sec
+        "requests_per_second": req_per_sec,
+        "server_metrics": server_metrics
     }
 
     data = []
@@ -106,22 +109,22 @@ class Tester:
 
     def getAverageLatency(self) -> float:
         if(len(self._latencies) == 0):
-            return -1.0
+            return 0.0
         return self._total_latency_ms / len(self._latencies)
 
     def computeP50Latency(self) -> float:
         if(len(self._latencies) == 0):
-            return -1.0
-        return np.quantile(self._latencies, 0.5)
+            return 0.0
+        return float(np.quantile(self._latencies, 0.5))
 
     def computeP95Latency(self) -> float:
         if(len(self._latencies) == 0):
-            return -1.0
-        return np.quantile(self._latencies, 0.95)
+            return 0.0
+        return float(np.quantile(self._latencies, 0.95))
     
     def computeReqPerSec(self) -> float:
         if(self._elapsed_seconds == 0):
-            return -1.0
+            return 0.0
         return self._num_tasks / self._elapsed_seconds
 
     async def run(self, url: str, payload: dict, numClients: int, numTasks: int) -> None:
@@ -174,11 +177,52 @@ class Tester:
             except asyncio.TimeoutError:
                 self.failures += 1
                 print("Request timed out")
-            except Exception as e:
+            except Exception:
                 self.failures += 1
             finally:
                 queue.task_done()
-                
+
+
+async def register_model(base_url: str, payload: dict) -> None:
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(base_url + "/models/register", json=payload) as response:
+            if response.status == 200:
+                return
+
+            body = await response.text()
+            if response.status == 400 and body.strip() == "Model already added":
+                return
+
+            raise RuntimeError(
+                f"Model registration failed with HTTP {response.status}: {body.strip()}"
+            )
+
+
+async def fetch_metrics(base_url: str) -> dict:
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(base_url + "/metrics") as response:
+            if response.status != 200:
+                body = await response.text()
+                raise RuntimeError(
+                    f"Metrics request failed with HTTP {response.status}: {body.strip()}"
+                )
+
+            metrics = await response.json()
+
+    required_sections = {
+        "requests",
+        "predictions",
+        "models",
+        "latency_ms",
+        "batching",
+        "errors",
+    }
+    if not isinstance(metrics, dict) or not required_sections.issubset(metrics):
+        raise RuntimeError("/metrics returned an unexpected JSON structure")
+
+    return metrics
 
 
 if __name__ == "__main__":

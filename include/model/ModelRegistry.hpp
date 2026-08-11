@@ -1,18 +1,20 @@
 #pragma once
 
 #include <model/ModelRuntime.hpp>
-#include <crow.h>
 
 #include <unordered_map>
 #include <string>
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <chrono>
 
 struct ModelInfo{
-    std::string modelVersion; //Name of model version 
+    std::string version; //Name of model version 
     std::string path; //File path for model
     std::unique_ptr<ModelRuntime> runtime; //Runtime for model
+    bool loaded = false;
+    std::chrono::time_point<std::chrono::steady_clock> creationTime;
 };
 
 struct ModelSummary {
@@ -32,4 +34,6 @@ public:
     bool checkVersion(const std::string& modelName, const std::string& version) const; //Checks if model modelName with version versionName exists
     std::vector<ModelSummary> getAvailableModels() const;
     ModelRuntime* getRuntime(const std::string& modelName, const std::string& modelVersion) const; //TODO maybe use const ModelRuntime* depending on final ModelRuntime impl
+    bool loadModel(const std::string& modelName, const std::string& modelVersion, std::string& errorResponse);
+    bool unloadModel(const std::string& modelName, const std::string& modelVersion, std::string& errorResponse);
 };

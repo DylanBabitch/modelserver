@@ -47,6 +47,8 @@ void HttpServer::run() {
     registerModelRegisterRoute(app);
     registerMetricsRoute(app);
     registerModelRoute(app);
+    registerModelLoadRoute(app);
+    registerModelUnloadRoute(app);
 
     app.port(8080).run();
 }
@@ -239,6 +241,58 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app) {
         res.code = 200;
         res.body = "Model Added Successfully\n";
         res.end();
+    });
+}
+
+void HttpServer::registerModelLoadRoute(crow::SimpleApp& app){
+    CROW_ROUTE(app, "/models/load").methods(crow::HTTPMethod::POST)
+    ([this](crow::request& req, crow::response& res){
+        crow::json::rvalue reqData = crow::json::load(req.body);
+        crow::response formatCheck = checkModelRegister(reqData); //requires same fields as load
+        if (formatCheck.code != 200) {
+            res = std::move(formatCheck);
+            res.end();
+            return;
+        }
+
+        const std::string name = reqData["name"].s();
+        const std::string version = reqData["version"].s();
+        std::string loadResponse;
+        if(!this->modelReg.loadModel(name, version, loadResponse)){
+            //error occured
+            res = crow::response(400, loadResponse);
+            res.end();
+            return;
+        }
+        res = crow::response(200, "Model successfully loaded.");
+        res.end();
+        return;
+    });
+}
+
+void HttpServer::registerModelUnloadRoute(crow::SimpleApp& app){
+    CROW_ROUTE(app, "/models/unload").methods(crow::HTTPMethod::POST)
+    ([this](crow::request& req, crow::response& res){
+        crow::json::rvalue reqData = crow::json::load(req.body);
+        crow::response formatCheck = checkModelRegister(reqData); //requires same fields as load
+        if (formatCheck.code != 200) {
+            res = std::move(formatCheck);
+            res.end();
+            return;
+        }
+
+        const std::string name = reqData["name"].s();
+        const std::string version = reqData["version"].s();
+        std::string loadResponse;
+        if(!this->modelReg.loadModel(name, version, loadResponse)){
+            //error occured
+            res = crow::response(400, loadResponse);
+            res.end();
+            return;
+        }
+        res = crow::response(200, "Model successfully unloaded.");
+        res.end();
+        return;
     });
 }
 
