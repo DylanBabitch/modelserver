@@ -13,6 +13,18 @@ add_subdirectory(external/crow)
 
 add_subdirectory(external/gtest)
 
+set(ONNXRUNTIME_ROOT "${CMAKE_SOURCE_DIR}/external/onnx")
+
+add_library(onnx SHARED IMPORTED)
+
+set_target_properties(onnx PROPERTIES
+    IMPORTED_LOCATION
+        "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so"
+
+    INTERFACE_INCLUDE_DIRECTORIES
+        "${ONNXRUNTIME_ROOT}/include"
+)
+
 add_executable(modelserver
     src/main.cpp
 
@@ -21,6 +33,7 @@ add_executable(modelserver
 
     src/model/DummyRuntime.cpp
     src/model/ModelRegistry.cpp
+    src/model/OnnxRuntime.cpp
 
     src/server/HttpServer.cpp
 
@@ -35,12 +48,17 @@ target_include_directories(modelserver PRIVATE
 
 target_link_libraries(modelserver PRIVATE
     Crow::Crow
+    onnx
 )
 
 target_compile_options(modelserver PRIVATE
     -Wall
     -Wextra
     -Wpedantic
+)
+
+set_target_properties(server PROPERTIES
+    BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
 )
 
 enable_testing()
