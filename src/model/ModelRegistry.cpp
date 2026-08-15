@@ -1,10 +1,12 @@
 #include "model/ModelRegistry.hpp"
+#include "request/PredictionRequest.hpp"
 
 #include <chrono>
 #include <string>
 #include <unordered_map>
 #include <stdexcept>
 #include <mutex>
+#include <vector>
 
 bool ModelRegistry::checkModel(const std::string& modelName) const{
     std::lock_guard<std::mutex> lock(mtx);
@@ -32,13 +34,13 @@ bool ModelRegistry::checkVersionLocked(const std::string& modelName, const std::
     return false;
 }
 
-bool ModelRegistry::addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& model){
+bool ModelRegistry::addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& model, std::vector<PredictionRequest::TensorInput> requiredInput){
     std::lock_guard<std::mutex> lock(mtx);
     if(!model){ //model is nullptr
         return false;
     }
     if(checkVersionLocked(modelName, version)) return false;
-    this->availableModels[modelName].emplace_back(version, path, std::move(model), false, std::chrono::steady_clock::now());
+    this->availableModels[modelName].emplace_back(version, path, std::move(model), std::move(requiredInput), false, std::chrono::steady_clock::now());
     return true;
 }
 

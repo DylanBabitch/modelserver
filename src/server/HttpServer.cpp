@@ -1,7 +1,7 @@
 #include "server/HttpServer.hpp"
 
 #include "metrics/Timer.hpp"
-#include "model/DummyRuntime.hpp"
+#include "model/OnnxRuntime.hpp"
 #include "request/PredictionRequest.hpp"
 
 #include <chrono>
@@ -92,6 +92,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
 
         const std::string model = reqData["model"].s();
         const std::string version = reqData["version"].s();
+
         crow::json::wvalue response;
 
         if (!modelReg.checkModel(model)) {
@@ -109,8 +110,18 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
             response["inference_latency_ms"] = nullptr;
             res.code = 404;
         } else {
+            //TODO add support for models with multiple inputs
+            //they pass in a vector of inputs in crow req
+            PredictionRequest::TensorInput input;
+            input.name = reqData["inputs"]["name"].s();
+            for(const auto& shapeVal : reqData["inputs"]["shape"]){
+                input.shape.push_back(shapeVal.u());
+            }
+            for(const auto& dataVal : reqData["inputs"]["data"]){
+                input.shape.push_back(dataVal.d());
+            }
             const auto creationTime = QueuedRequest::Clock::now();
-            PredictionRequest predictionRequest{model, version, reqData["input"].s()};
+            PredictionRequest predictionRequest{model, version, input};
 
             try {
                 std::future<PredictionResponse> predictionFuture =
@@ -119,8 +130,8 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
 
                 response["model"] = predictionResponse.model;
                 response["version"] = predictionResponse.version;
-                response["prediction"] = predictionResponse.prediction;
-                response["confidence"] = predictionResponse.confidence;
+                response["output"]["shape"] = predictionResponse.output.shape;
+                response["output"]["data"] = predictionResponse.output.data;
                 response["inference_latency_ms"] = predictionResponse.inference_latency_ms;
                 response["queue_wait_ms"] = predictionResponse.queue_wait_ms;
                 response["batch_wait_ms"] = predictionResponse.batch_wait_ms;
@@ -228,9 +239,32 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app) {
 
         const std::string name = reqData["name"].s();
         const std::string version = reqData["version"].s();
-        auto runtime = std::make_unique<DummyRuntime>();
+        
+        const std::string path = reqData["path"].s();
+        auto runtime = std::make_unique<OnnxRuntime>(path);
 
-        if (!modelReg.addModel(name, version, "dummypath/", std::move(runtime))) {
+        //make the TensorInput
+        std::vector<PredictionRequest::TensorInput> tensors;
+        tensors.reserve(reqData["inputs"].size());
+        for(const auto& input : reqData["inputs"]){
+            std::string name = input["name"].s();
+
+            std::vector<std::uint64_t> inputShapes;
+            for(const auto& val : input["shape"]){
+                inputShapes.push_back(val.u());
+            }
+
+            std::vector<float> inputData;
+            for(const auto& val : input["data"]){
+                inputData.push_back(val.d());
+            }
+
+
+            tensors.emplace_back(name, inputShapes, inputData);
+        }
+        
+
+        if (!modelReg.addModel(name, version, path, std::move(runtime), tensors)) {
             res.code = 400;
             res.body = "Model already added\n";
             res.end();
@@ -307,6 +341,7 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
     if (!reqData.has("version")) {
         return crow::response(400, "Missing required field: version");
     }
+    //TODO add support for multiple inputs
     if (!reqData.has("input")) {
         return crow::response(400, "Missing required field: input");
     }
@@ -317,9 +352,33 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
     if (reqData["version"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'version' must be a string");
     }
-    if (reqData["input"].t() != crow::json::type::String) {
-        return crow::response(400, "Field 'input' must be a string");
+    if (reqData["input"].t() != crow::json::type::List) {
+        return crow::response(400, "Field 'input' must be a list");
     }
+
+    //TODO clean this up
+    if (!reqData["input"].has("name")) {
+        return crow::response(400, "Missing required field in input: name");
+    }
+    if (!reqData["input"].has("shape")) {
+        return crow::response(400, "Missing required field in input: shape");
+    }
+    if (!reqData.has("input")) {
+        return crow::response(400, "Missing required field in input: data");
+    }
+
+    if (reqData["input"]["name"].t() != crow::json::type::String) {
+        return crow::response(400, "Field 'input/name' must be a string");
+    }if (reqData["input"]["shape"].t() != crow::json::type::List) {
+        return crow::response(400, "Field 'input/shape' must be a list");
+    }if (reqData["input"]["data"].t() != crow::json::type::List) {
+        return crow::response(400, "Field 'input/data' must be a list");
+    }
+
+    //TODO check for list type
+
+
+
 
     return crow::response(200, "Well Formatted");
 }
@@ -334,18 +393,61 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& reqData) {
     if (!reqData.has("version")) {
         return crow::response(400, "Missing required field: version");
     }
+     if (!reqData.has("path")) {
+        return crow::response(400, "Missing required field: path");
+    }
+    if (!reqData.has("inputs")) {
+        return crow::response(400, "Missing required field: inputs");
+    }
     if (reqData["name"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'name' must be a string");
     }
     if (reqData["version"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'version' must be a string");
     }
+    if (reqData["path"].t() != crow::json::type::String) {
+        return crow::response(400, "Field 'path' must be a string");
+    }
+    if (reqData["inputs"].t() != crow::json::type::List) {
+        return crow::response(400, "Field 'inputs' must be a list");
+    }
     if (reqData["name"].size() == 0) {
         return crow::response(400, "Field name must be non-empty");
-    }
-    if (reqData["version"].size() == 0) {
+    }if (reqData["version"].size() == 0) {
         return crow::response(400, "Field version must be non-empty");
+    }if (reqData["path"].size() == 0) {
+        return crow::response(400, "Field path must be non-empty");
+    } if(reqData["inputs"].size() == 0) {
+        return crow::response(400, "Field inputs must be non-empty");
     }
+
+    //go through inputs
+    for(const auto& input : reqData["inputs"]){
+        if (!input.has("name")) {
+            return crow::response(400, "Missing required field: inputs/name");
+        }if (!input.has("shape")) {
+            return crow::response(400, "Missing required field: inputs/shape");
+        }if (!input.has("data")) {
+            return crow::response(400, "Missing required field: inputs/data");
+        }
+
+        if(input["name"].t() != crow::json::type::String) {
+            return crow::response(400, "Field 'inputs/name' must be a string");
+        } if(input["shape"].t() != crow::json::type::List) {
+            return crow::response(400, "Field 'inputs/shape' must be a list");
+        } if(input["data"].t() != crow::json::type::List) {
+            return crow::response(400, "Field 'inputs/data' must be a list");
+        }
+
+        if(input["name"].size() == 0) {
+            return crow::response(400, "Field inputs/name must be non-empty");
+        } if(input["shape"].size() == 0) {
+            return crow::response(400, "Field inputs/shape must be non-empty");
+        } if(input["data"].size() == 0) {
+            return crow::response(400, "Field inputs/data must be non-empty");
+        }
+    }
+
 
     return crow::response(200, "Well formatted");
 }

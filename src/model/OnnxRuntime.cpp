@@ -6,9 +6,15 @@
 #include <vector>
 #include <cstdint>
 #include <exception>
+#include <metrics/Timer.hpp>
 
 PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
     //TODO add support for multiple 
+    Timer t;
+    
+    
+
+
     std::vector<float>& inputData = request.input.data;
     std::vector<std::int64_t>& inputShape = request.input.shape;
 
@@ -21,7 +27,7 @@ PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
 
     //get from model registry in the future
     std::vector<float> outputValues(1 * 10, 0.0f);
-    std::vector<int64_t> outputShape = {1, 10};
+    std::vector<std::int64_t> outputShape = {1, 10};
     
     Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     Ort::Value inputTensor = Ort::Value::CreateTensor<float>(memInfo, inputData.data(), inputData.size(), inputShape.data(), inputShape.size());
@@ -32,5 +38,11 @@ PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
 
     session.Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, &outputTensor, 1);
 
+    double latency = t.end();
 
+    PredictionResponse p{request.model, request.version, {outputShape, outputValues}, latency};
+    return p;
 }
+
+OnnxRuntime::OnnxRuntime(const std::string& modelPath):
+             env(ORT_LOGGING_LEVEL_WARNING, "log identifier"), session_options(), session(env, modelPath.c_str(), session_options){}
