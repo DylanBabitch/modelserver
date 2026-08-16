@@ -10,6 +10,7 @@ class OnnxRuntime : public ModelRuntime{
     Ort::Env env;
     Ort::SessionOptions session_options;
     Ort::Session session;
+    
 public:
     explicit OnnxRuntime(const std::string& modelPath);
     PredictionResponse predict(PredictionRequest& request) override final;

@@ -57,7 +57,7 @@ target_compile_options(modelserver PRIVATE
     -Wpedantic
 )
 
-set_target_properties(server PROPERTIES
+set_target_properties(modelserver PROPERTIES
     BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
 )
 

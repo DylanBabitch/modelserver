@@ -6,6 +6,7 @@
 
 struct PredictionResponse{
     struct TensorOutput {
+        char* name;
         std::vector<std::int64_t> shape;
         std::vector<float> data;
     };

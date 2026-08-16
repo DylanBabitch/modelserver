@@ -15,6 +15,7 @@ class HttpServer{
     RequestQueue& reqQueue;
     crow::response checkPrediction(crow::json::rvalue& req_data);
     crow::response checkModelRegister(crow::json::rvalue& req_data);
+    crow::response checkModelLoad(crow::json::rvalue& req_data);
     void registerHealthRoute(crow::SimpleApp& app);
     void registerPredictRoute(crow::SimpleApp& app);
     void registerModelRoute(crow::SimpleApp& app);

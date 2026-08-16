@@ -6,7 +6,7 @@
 #include <sstream>
 
 
-//Deprecated as of 8/13/2026, use real runtimes
+//Deprecated as of 8/13/2026, use real 
 PredictionResponse DummyRuntime::predict(const PredictionRequest& request) {
     //actually run model
 

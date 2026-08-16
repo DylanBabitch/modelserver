@@ -11,9 +11,6 @@
 PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
     //TODO add support for multiple 
     Timer t;
-    
-    
-
 
     std::vector<float>& inputData = request.input.data;
     std::vector<std::int64_t>& inputShape = request.input.shape;

@@ -40,7 +40,7 @@ bool ModelRegistry::addModel(const std::string& modelName, const std::string& ve
         return false;
     }
     if(checkVersionLocked(modelName, version)) return false;
-    this->availableModels[modelName].emplace_back(version, path, std::move(model), std::move(requiredInput), false, std::chrono::steady_clock::now());
+    this->availableModels[modelName].emplace_back(version, path, std::move(model), requiredInput, false, std::chrono::steady_clock::now());
     return true;
 }
 
@@ -79,8 +79,6 @@ ModelRuntime* ModelRegistry::getRuntime(const std::string& modelName, const std:
     }
 
     return nullptr;
-    
-    
 }
 
 bool ModelRegistry::loadModel(const std::string& modelName, const std::string& modelVersion, std::string& errorResponse){
@@ -127,4 +125,19 @@ bool ModelRegistry::unloadModel(const std::string& modelName, const std::string&
     }
     errorResponse = "Version: " + modelVersion + " does not exist for Model: " + modelName + ".";
     return false;
+}
+
+const ModelInfo& ModelRegistry::getModelInfo(const std::string& modelName, const std::string& modelVersion) const{
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = availableModels.find(modelName);
+    if(it == availableModels.end()){
+        throw std::runtime_error("Model " + modelName + " does not exist.");
+    }
+
+    for(const ModelInfo& mInfo : it->second){
+        if(mInfo.version == modelVersion){
+            return mInfo;
+        }
+    }
+    throw std::runtime_error("Version " + modelVersion + " does not exist for model " + modelName);
 }

@@ -2,6 +2,7 @@
 
 #include <model/ModelRuntime.hpp>
 #include <request/PredictionRequest.hpp>
+#include <request/PredictionResponse.hpp>
 
 #include <unordered_map>
 #include <string>
@@ -10,11 +11,22 @@
 #include <mutex>
 #include <chrono>
 
+struct onnxInputData{
+    char* name;
+    std::vector<std::int64_t> shape;
+};
+
+struct onnxOutputData{
+    char* name;
+    
+};
+
 struct ModelInfo{
     std::string version; //Name of model version 
     std::string path; //File path for model
     std::unique_ptr<ModelRuntime> runtime; //Runtime for model
-    std::vector<PredictionRequest::TensorInput> requiredInputs;
+    std::vector<onnxInputData> requiredInputs;
+    std::vector<PredictionResponse::TensorOutput> requiredOutputs;
     bool loaded = false;
     std::chrono::time_point<std::chrono::steady_clock> creationTime;
 };
@@ -38,4 +50,5 @@ public:
     ModelRuntime* getRuntime(const std::string& modelName, const std::string& modelVersion) const; //TODO maybe use const ModelRuntime* depending on final ModelRuntime impl
     bool loadModel(const std::string& modelName, const std::string& modelVersion, std::string& errorResponse);
     bool unloadModel(const std::string& modelName, const std::string& modelVersion, std::string& errorResponse);
+    const ModelInfo& getModelInfo(const std::string& modelName, const std::string& modelVersion) const;
 };
