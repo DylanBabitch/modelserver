@@ -249,7 +249,7 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app) {
         for(const auto& input : reqData["inputs"]){
             std::string name = input["name"].s();
 
-            std::vector<std::uint64_t> inputShapes;
+            std::vector<std::int64_t> inputShapes;
             for(const auto& val : input["shape"]){
                 inputShapes.push_back(val.u());
             }
@@ -454,28 +454,50 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& reqData) {
     //go through outputs
     for(const auto& output : reqData["outputs"]){
         if (!output.has("name")) {
-            return crow::response(400, "Missing required field: inputs/name");
+            return crow::response(400, "Missing required field: outputs/name");
         }if (!output.has("shape")) {
-            return crow::response(400, "Missing required field: inputs/shape");
+            return crow::response(400, "Missing required field: outputs/shape");
         }
 
-        if(input["name"].t() != crow::json::type::String) {
-            return crow::response(400, "Field 'inputs/name' must be a string");
-        } if(input["shape"].t() != crow::json::type::List) {
-            return crow::response(400, "Field 'inputs/shape' must be a list");
-        } if(input["data"].t() != crow::json::type::List) {
-            return crow::response(400, "Field 'inputs/data' must be a list");
+        if(output["name"].t() != crow::json::type::String) {
+            return crow::response(400, "Field 'outputs/name' must be a string");
+        } if(output["shape"].t() != crow::json::type::List) {
+            return crow::response(400, "Field 'outputs/shape' must be a list");
         }
 
-        if(input["name"].size() == 0) {
-            return crow::response(400, "Field inputs/name must be non-empty");
-        } if(input["shape"].size() == 0) {
-            return crow::response(400, "Field inputs/shape must be non-empty");
-        } if(input["data"].size() == 0) {
-            return crow::response(400, "Field inputs/data must be non-empty");
+        if(output["name"].size() == 0) {
+            return crow::response(400, "Field outputs/name must be non-empty");
+        } if(output["shape"].size() == 0) {
+            return crow::response(400, "Field outputs/shape must be non-empty");
         }
     }
 
+
+    return crow::response(200, "Well formatted");
+}
+
+crow::response HttpServer::checkModelLoad(crow::json::rvalue& reqData) {
+    if (!reqData) {
+        return crow::response(400, "Invalid JSON Body");
+    }
+    if (!reqData.has("name")) {
+        return crow::response(400, "Missing required field: name");
+    }
+    if (!reqData.has("version")) {
+        return crow::response(400, "Missing required field: version");
+    }
+    if (reqData["name"].t() != crow::json::type::String) {
+        return crow::response(400, "Field 'name' must be a string");
+    }
+    if (reqData["version"].t() != crow::json::type::String) {
+        return crow::response(400, "Field 'version' must be a string");
+    }
+    if (reqData["name"].size() == 0) {
+        return crow::response(400, "Field name must be non-empty");
+    }
+    if (reqData["version"].size() == 0) {
+        return crow::response(400, "Field version must be non-empty");
+    }
 
     return crow::response(200, "Well formatted");
 }

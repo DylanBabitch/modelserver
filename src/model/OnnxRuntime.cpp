@@ -8,12 +8,13 @@
 #include <exception>
 #include <metrics/Timer.hpp>
 
-PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
+PredictionResponse OnnxRuntime::predict(const PredictionRequest& request){
     //TODO add support for multiple 
     Timer t;
 
-    std::vector<float>& inputData = request.input.data;
-    std::vector<std::int64_t>& inputShape = request.input.shape;
+    const std::vector<float>& inputData = request.input.data;
+    const std::vector<std::int64_t>& inputShape = request.input.shape;
+    std::vector<float> inputValues = inputData;
 
     //enfore shape == 1x1x28x28 for minst 
     if(inputShape.size() != 4){
@@ -27,7 +28,7 @@ PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
     std::vector<std::int64_t> outputShape = {1, 10};
     
     Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    Ort::Value inputTensor = Ort::Value::CreateTensor<float>(memInfo, inputData.data(), inputData.size(), inputShape.data(), inputShape.size());
+    Ort::Value inputTensor = Ort::Value::CreateTensor<float>(memInfo, inputValues.data(), inputValues.size(), inputShape.data(), inputShape.size());
     //get from model registry in future
     Ort::Value outputTensor = Ort::Value::CreateTensor<float>(memInfo, outputValues.data(), outputValues.size(), outputShape.data(), outputShape.size());
     const char* inputNames[] = {"Input3"};
@@ -37,7 +38,7 @@ PredictionResponse OnnxRuntime::predict(PredictionRequest& request){
 
     double latency = t.end();
 
-    PredictionResponse p{request.model, request.version, {outputShape, outputValues}, latency};
+    PredictionResponse p{request.model, request.version, {"Plus214_Output_0", outputShape, outputValues}, latency};
     return p;
 }
 

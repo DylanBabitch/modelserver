@@ -13,6 +13,6 @@ class OnnxRuntime : public ModelRuntime{
     
 public:
     explicit OnnxRuntime(const std::string& modelPath);
-    PredictionResponse predict(PredictionRequest& request) override final;
+    PredictionResponse predict(const PredictionRequest& request) override final;
 
 };

@@ -12,12 +12,12 @@
 #include <chrono>
 
 struct onnxInputData{
-    char* name;
+    std::string name;
     std::vector<std::int64_t> shape;
 };
 
 struct onnxOutputData{
-    char* name;
+    std::string name;
     
 };
 

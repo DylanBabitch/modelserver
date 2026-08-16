@@ -6,7 +6,7 @@
 
 struct PredictionRequest {
     struct TensorInput {
-        char* name;
+        std::string name;
         std::vector<std::int64_t> shape;
         std::vector<float> data;
     };

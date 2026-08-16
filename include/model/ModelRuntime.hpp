@@ -8,7 +8,6 @@
 class ModelRuntime{
 public:
     virtual PredictionResponse predict(const PredictionRequest& request) = 0;
-    virtual PredictionResponse predict(PredictionRequest& request) = 0;
     virtual std::vector<PredictionResponse> predictBatch(const std::vector<PredictionRequest>& requests) {
         std::vector<PredictionResponse> responses;
         responses.reserve(requests.size());
