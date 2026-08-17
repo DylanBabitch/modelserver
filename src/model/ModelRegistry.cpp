@@ -1,5 +1,4 @@
 #include "model/ModelRegistry.hpp"
-#include "request/PredictionRequest.hpp"
 
 #include <chrono>
 #include <string>
@@ -34,13 +33,13 @@ bool ModelRegistry::checkVersionLocked(const std::string& modelName, const std::
     return false;
 }
 
-bool ModelRegistry::addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& model, std::vector<PredictionRequest::TensorInput> requiredInput){
+bool ModelRegistry::addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& model){
     std::lock_guard<std::mutex> lock(mtx);
     if(!model){ //model is nullptr
         return false;
     }
     if(checkVersionLocked(modelName, version)) return false;
-    this->availableModels[modelName].emplace_back(version, path, std::move(model), requiredInput, false, std::chrono::steady_clock::now());
+    this->availableModels[modelName].emplace_back(version, path, std::move(model), true, std::chrono::steady_clock::now());
     return true;
 }
 
@@ -73,7 +72,7 @@ ModelRuntime* ModelRegistry::getRuntime(const std::string& modelName, const std:
     }
 
     for(const ModelInfo& mInfo : it->second){
-        if(mInfo.version == modelVersion){
+        if(mInfo.version == modelVersion && mInfo.loaded){
             return mInfo.runtime.get();
         }
     }
@@ -119,7 +118,7 @@ bool ModelRegistry::unloadModel(const std::string& modelName, const std::string&
                 errorResponse = "Model: " + modelName + " Version: " + modelVersion + " is already unloaded.";
                 return false;
             }
-            info.loaded = true;
+            info.loaded = false;
             return true;
         }
     }

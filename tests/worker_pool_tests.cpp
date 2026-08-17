@@ -14,7 +14,7 @@ namespace {
 class TestRuntime final : public ModelRuntime {
 public:
     PredictionResponse predict(const PredictionRequest& request) override {
-        return PredictionResponse{request.model, request.version, "positive", 0.95};
+        return PredictionResponse{request.model, request.version, {"output", {1}, {0.95f}}};
     }
 };
 
@@ -24,6 +24,10 @@ public:
         throw std::runtime_error("prediction failed");
     }
 };
+
+PredictionRequest makeRequest(const std::string& model, const std::string& version) {
+    return PredictionRequest{model, version, {"input", {1}, {1.0f}}};
+}
 
 } // namespace
 
@@ -37,13 +41,13 @@ TEST(WorkerPoolTest, ProcessesQueuedPredictionRequestAndRecordsWorkerMetrics) {
 
     pool.start();
     std::future<PredictionResponse> future =
-        queue.push(PredictionRequest{"sentiment", "v1", "great"});
+        queue.push(makeRequest("sentiment", "v1"));
 
     const PredictionResponse response = future.get();
     EXPECT_EQ(response.model, "sentiment");
     EXPECT_EQ(response.version, "v1");
-    EXPECT_EQ(response.prediction, "positive");
-    EXPECT_DOUBLE_EQ(response.confidence, 0.95);
+    EXPECT_EQ(response.output.name, "output");
+    EXPECT_EQ(response.output.data, std::vector<float>({0.95f}));
     EXPECT_EQ(metrics.getPredictionsTotal(), 1U);
     EXPECT_EQ(metrics.getBatchesTotal(), 1U);
     EXPECT_EQ(metrics.getRequestsBatchedTotal(), 1U);
@@ -63,7 +67,7 @@ TEST(WorkerPoolTest, RuntimeFailureCompletesEveryFutureAndRecordsOneRuntimeError
 
     pool.start();
     std::future<PredictionResponse> future =
-        queue.push(PredictionRequest{"sentiment", "v1", "input"});
+        queue.push(makeRequest("sentiment", "v1"));
 
     EXPECT_THROW(future.get(), std::runtime_error);
     EXPECT_EQ(metrics.getRuntimeErrorsTotal(), 1U);

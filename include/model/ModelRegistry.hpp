@@ -1,8 +1,6 @@
 #pragma once
 
 #include <model/ModelRuntime.hpp>
-#include <request/PredictionRequest.hpp>
-#include <request/PredictionResponse.hpp>
 
 #include <unordered_map>
 #include <string>
@@ -11,22 +9,10 @@
 #include <mutex>
 #include <chrono>
 
-struct onnxInputData{
-    std::string name;
-    std::vector<std::int64_t> shape;
-};
-
-struct onnxOutputData{
-    std::string name;
-    
-};
-
 struct ModelInfo{
     std::string version; //Name of model version 
     std::string path; //File path for model
     std::unique_ptr<ModelRuntime> runtime; //Runtime for model
-    std::vector<onnxInputData> requiredInputs;
-    std::vector<PredictionResponse::TensorOutput> requiredOutputs;
     bool loaded = false;
     std::chrono::time_point<std::chrono::steady_clock> creationTime;
 };
@@ -43,7 +29,7 @@ private:
     std::unordered_map<std::string, std::vector<ModelInfo>> availableModels; //Map from Model Name -> Vector of ModelInfo (one for each version within a single model)
     bool checkVersionLocked(const std::string& modelName, const std::string& version) const; //MUTEX SAFE Checks if model modelName with version versionName exists
 public:
-    bool addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& runtime, std::vector<PredictionRequest::TensorInput> requiredInput); //Returns true if model gets added, false if it already exists
+    bool addModel(const std::string& modelName, const std::string& version, const std::string& path, std::unique_ptr<ModelRuntime>&& runtime); //Returns true if model gets added, false if it already exists
     bool checkModel(const std::string& modelName) const; //Checks if model modelName exists
     bool checkVersion(const std::string& modelName, const std::string& version) const; //Checks if model modelName with version versionName exists
     std::vector<ModelSummary> getAvailableModels() const;

@@ -92,3 +92,18 @@ TEST(ModelRegistryTest, UnknownModelReturnsFalse)
     EXPECT_FALSE(registry.checkModel("missing model"));
     EXPECT_FALSE(registry.checkVersion("missing model", "v1"));
 }
+
+TEST(ModelRegistryTest, UnloadedModelDoesNotExposeRuntime)
+{
+    ModelRegistry registry;
+    std::string errorResponse;
+
+    ASSERT_TRUE(registry.addModel("dummy mode", "v1", "test-path", makeRuntime()));
+    EXPECT_NE(registry.getRuntime("dummy mode", "v1"), nullptr);
+
+    ASSERT_TRUE(registry.unloadModel("dummy mode", "v1", errorResponse));
+    EXPECT_EQ(registry.getRuntime("dummy mode", "v1"), nullptr);
+
+    ASSERT_TRUE(registry.loadModel("dummy mode", "v1", errorResponse));
+    EXPECT_NE(registry.getRuntime("dummy mode", "v1"), nullptr);
+}

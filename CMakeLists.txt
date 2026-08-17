@@ -75,6 +75,7 @@ add_executable(modelserver_tests
     src/metrics/Timer.cpp
     src/model/DummyRuntime.cpp
     src/model/ModelRegistry.cpp
+    src/model/OnnxRuntime.cpp
     src/server/HttpServer.cpp
     src/scheduler/RequestQueue.cpp
     src/scheduler/WorkerPool.cpp
@@ -88,6 +89,11 @@ target_include_directories(modelserver_tests PRIVATE
 target_link_libraries(modelserver_tests PRIVATE
     GTest::gtest_main
     Crow::Crow
+    onnx
+)
+
+set_target_properties(modelserver_tests PROPERTIES
+    BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
 )
 
 include(GoogleTest)

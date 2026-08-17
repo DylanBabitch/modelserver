@@ -8,9 +8,17 @@
 
 using namespace std::chrono_literals;
 
+namespace {
+
+PredictionRequest makeRequest(const std::string& model, const std::string& version) {
+    return PredictionRequest{model, version, {"input", {1}, {1.0f}}};
+}
+
+} // namespace
+
 TEST(RequestQueueTest, PushAndPopTransfersRequestAndCompletesFuture) {
     RequestQueue queue;
-    PredictionRequest request{"sentiment", "v1", "great"};
+    PredictionRequest request = makeRequest("sentiment", "v1");
 
     std::future<PredictionResponse> future = queue.push(request);
     std::optional<QueuedRequest> queued = queue.popBlocking();
@@ -19,15 +27,17 @@ TEST(RequestQueueTest, PushAndPopTransfersRequestAndCompletesFuture) {
     EXPECT_EQ(queued->requestId, 0U);
     EXPECT_EQ(queued->request.model, "sentiment");
     EXPECT_EQ(queued->request.version, "v1");
-    EXPECT_EQ(queued->request.input, "great");
+    EXPECT_EQ(queued->request.input.name, "input");
+    EXPECT_EQ(queued->request.input.shape, std::vector<std::int64_t>({1}));
+    EXPECT_EQ(queued->request.input.data, std::vector<float>({1.0f}));
 
-    queued->resultPromise.set_value(PredictionResponse{"sentiment", "v1", "positive", 0.9, 1.5});
+    queued->resultPromise.set_value(PredictionResponse{"sentiment", "v1", {"output", {1}, {0.9f}}, 1.5});
 
     const PredictionResponse response = future.get();
     EXPECT_EQ(response.model, "sentiment");
     EXPECT_EQ(response.version, "v1");
-    EXPECT_EQ(response.prediction, "positive");
-    EXPECT_DOUBLE_EQ(response.confidence, 0.9);
+    EXPECT_EQ(response.output.name, "output");
+    EXPECT_EQ(response.output.data, std::vector<float>({0.9f}));
     EXPECT_DOUBLE_EQ(response.inference_latency_ms, 1.5);
 }
 
@@ -46,15 +56,15 @@ TEST(RequestQueueTest, ShutdownWakesBlockedPop) {
 
 TEST(RequestQueueTest, ShutdownDrainsQueuedRequestsThenStops) {
     RequestQueue queue;
-    std::future<PredictionResponse> future = queue.push(PredictionRequest{"sentiment", "v1", "bad"});
+    std::future<PredictionResponse> future = queue.push(makeRequest("sentiment", "v1"));
 
     queue.setShutdown();
 
     std::optional<QueuedRequest> queued = queue.popBlocking();
     ASSERT_TRUE(queued.has_value());
-    queued->resultPromise.set_value(PredictionResponse{"sentiment", "v1", "negative", 0.8, 2.0});
+    queued->resultPromise.set_value(PredictionResponse{"sentiment", "v1", {"output", {1}, {0.8f}}, 2.0});
 
-    EXPECT_EQ(future.get().prediction, "negative");
+    EXPECT_EQ(future.get().output.data, std::vector<float>({0.8f}));
     EXPECT_FALSE(queue.popBlocking().has_value());
 }
 
@@ -62,7 +72,7 @@ TEST(RequestQueueTest, PushAfterShutdownReturnsExceptionalFuture) {
     RequestQueue queue;
     queue.setShutdown();
 
-    std::future<PredictionResponse> future = queue.push(PredictionRequest{"sentiment", "v1", "great"});
+    std::future<PredictionResponse> future = queue.push(makeRequest("sentiment", "v1"));
 
     EXPECT_THROW(future.get(), std::runtime_error);
 }

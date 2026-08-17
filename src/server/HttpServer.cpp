@@ -113,12 +113,12 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
             //TODO add support for models with multiple inputs
             //they pass in a vector of inputs in crow req
             PredictionRequest::TensorInput input;
-            input.name = reqData["inputs"]["name"].s();
-            for(const auto& shapeVal : reqData["inputs"]["shape"]){
+            input.name = reqData["input"]["name"].s();
+            for(const auto& shapeVal : reqData["input"]["shape"]){
                 input.shape.push_back(shapeVal.u());
             }
-            for(const auto& dataVal : reqData["inputs"]["data"]){
-                input.shape.push_back(dataVal.d());
+            for(const auto& dataVal : reqData["input"]["data"]){
+                input.data.push_back(dataVal.d());
             }
             const auto creationTime = QueuedRequest::Clock::now();
             PredictionRequest predictionRequest{model, version, input};
@@ -130,6 +130,7 @@ void HttpServer::registerPredictRoute(crow::SimpleApp& app) {
 
                 response["model"] = predictionResponse.model;
                 response["version"] = predictionResponse.version;
+                response["output"]["name"] = predictionResponse.output.name;
                 response["output"]["shape"] = predictionResponse.output.shape;
                 response["output"]["data"] = predictionResponse.output.data;
                 response["inference_latency_ms"] = predictionResponse.inference_latency_ms;
@@ -239,34 +240,19 @@ void HttpServer::registerModelRegisterRoute(crow::SimpleApp& app) {
 
         const std::string name = reqData["name"].s();
         const std::string version = reqData["version"].s();
-        
         const std::string path = reqData["path"].s();
-        auto runtime = std::make_unique<OnnxRuntime>(path);
 
-        //make the TensorInput
-        std::vector<PredictionRequest::TensorInput> tensors;
-        tensors.reserve(reqData["inputs"].size());
-        for(const auto& input : reqData["inputs"]){
-            std::string name = input["name"].s();
-
-            std::vector<std::int64_t> inputShapes;
-            for(const auto& val : input["shape"]){
-                inputShapes.push_back(val.u());
+        try {
+            auto runtime = std::make_unique<OnnxRuntime>(path);
+            if (!modelReg.addModel(name, version, path, std::move(runtime))) {
+                res.code = 400;
+                res.body = "Model already added\n";
+                res.end();
+                return;
             }
-
-            std::vector<float> inputData;
-            for(const auto& val : input["data"]){
-                inputData.push_back(val.d());
-            }
-
-
-            tensors.emplace_back(name, inputShapes, inputData);
-        }
-        
-
-        if (!modelReg.addModel(name, version, path, std::move(runtime), tensors)) {
+        } catch (const std::exception& e) {
             res.code = 400;
-            res.body = "Model already added\n";
+            res.body = "Failed to load ONNX model: " + std::string(e.what()) + "\n";
             res.end();
             return;
         }
@@ -318,7 +304,7 @@ void HttpServer::registerModelUnloadRoute(crow::SimpleApp& app){
         const std::string name = reqData["name"].s();
         const std::string version = reqData["version"].s();
         std::string loadResponse;
-        if(!this->modelReg.loadModel(name, version, loadResponse)){
+        if(!this->modelReg.unloadModel(name, version, loadResponse)){
             //error occured
             res = crow::response(400, loadResponse);
             res.end();
@@ -352,8 +338,8 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
     if (reqData["version"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'version' must be a string");
     }
-    if (reqData["input"].t() != crow::json::type::List) {
-        return crow::response(400, "Field 'input' must be a list");
+    if (reqData["input"].t() != crow::json::type::Object) {
+        return crow::response(400, "Field 'input' must be an object");
     }
 
     //TODO clean this up
@@ -363,7 +349,7 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
     if (!reqData["input"].has("shape")) {
         return crow::response(400, "Missing required field in input: shape");
     }
-    if (!reqData.has("input")) {
+    if (!reqData["input"].has("data")) {
         return crow::response(400, "Missing required field in input: data");
     }
 
@@ -375,7 +361,22 @@ crow::response HttpServer::checkPrediction(crow::json::rvalue& reqData) {
         return crow::response(400, "Field 'input/data' must be a list");
     }
 
-    //TODO check for list type
+    if (reqData["input"]["name"].size() == 0) {
+        return crow::response(400, "Field input/name must be non-empty");
+    }
+    for(const auto& shapeVal : reqData["input"]["shape"]){
+        if (shapeVal.t() != crow::json::type::Number) {
+            return crow::response(400, "Field 'input/shape' must contain numbers");
+        }
+        if (shapeVal.d() != static_cast<double>(shapeVal.i()) || shapeVal.i() < 0) {
+            return crow::response(400, "Field 'input/shape' must contain non-negative integers");
+        }
+    }
+    for(const auto& dataVal : reqData["input"]["data"]){
+        if (dataVal.t() != crow::json::type::Number) {
+            return crow::response(400, "Field 'input/data' must contain numbers");
+        }
+    }
 
 
 
@@ -396,12 +397,6 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& reqData) {
      if (!reqData.has("path")) {
         return crow::response(400, "Missing required field: path");
     }
-    if (!reqData.has("inputs")) {
-        return crow::response(400, "Missing required field: inputs");
-    }
-    if (!reqData.has("outputs")) {
-        return crow::response(400, "Missing required field: outputs");
-    }
     if (reqData["name"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'name' must be a string");
     }
@@ -411,67 +406,13 @@ crow::response HttpServer::checkModelRegister(crow::json::rvalue& reqData) {
     if (reqData["path"].t() != crow::json::type::String) {
         return crow::response(400, "Field 'path' must be a string");
     }
-    if (reqData["inputs"].t() != crow::json::type::List) {
-        return crow::response(400, "Field 'inputs' must be a list");
-    }
-    if (reqData["outputs"].t() != crow::json::type::List) {
-        return crow::response(400, "Field 'outputs' must be a list");
-    }
     if (reqData["name"].size() == 0) {
         return crow::response(400, "Field name must be non-empty");
     }if (reqData["version"].size() == 0) {
         return crow::response(400, "Field version must be non-empty");
     }if (reqData["path"].size() == 0) {
         return crow::response(400, "Field path must be non-empty");
-    } if(reqData["inputs"].size() == 0) {
-        return crow::response(400, "Field inputs must be non-empty");
-    }if(reqData["outputs"].size() == 0) {
-        return crow::response(400, "Field outputs must be non-empty");
     }
-
-    //go through inputs
-    for(const auto& input : reqData["inputs"]){
-        if (!input.has("name")) {
-            return crow::response(400, "Missing required field: inputs/name");
-        }if (!input.has("shape")) {
-            return crow::response(400, "Missing required field: inputs/shape");
-        }if (!input.has("data")) {
-            return crow::response(400, "Missing required field: inputs/data");
-        }
-
-        if(input["name"].t() != crow::json::type::String) {
-            return crow::response(400, "Field 'inputs/name' must be a string");
-        } if(input["shape"].t() != crow::json::type::List) {
-            return crow::response(400, "Field 'inputs/shape' must be a list");
-        }
-
-        if(input["name"].size() == 0) {
-            return crow::response(400, "Field inputs/name must be non-empty");
-        } if(input["shape"].size() == 0) {
-            return crow::response(400, "Field inputs/shape must be non-empty");
-        }
-    } 
-    //go through outputs
-    for(const auto& output : reqData["outputs"]){
-        if (!output.has("name")) {
-            return crow::response(400, "Missing required field: outputs/name");
-        }if (!output.has("shape")) {
-            return crow::response(400, "Missing required field: outputs/shape");
-        }
-
-        if(output["name"].t() != crow::json::type::String) {
-            return crow::response(400, "Field 'outputs/name' must be a string");
-        } if(output["shape"].t() != crow::json::type::List) {
-            return crow::response(400, "Field 'outputs/shape' must be a list");
-        }
-
-        if(output["name"].size() == 0) {
-            return crow::response(400, "Field outputs/name must be non-empty");
-        } if(output["shape"].size() == 0) {
-            return crow::response(400, "Field outputs/shape must be non-empty");
-        }
-    }
-
 
     return crow::response(200, "Well formatted");
 }

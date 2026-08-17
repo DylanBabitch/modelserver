@@ -7,12 +7,20 @@
 #include "metrics/MetricsRegistry.hpp"
 #include "scheduler/BatchManager.hpp"
 
+namespace {
+
+PredictionRequest makeRequest(const std::string& model, const std::string& version) {
+    return PredictionRequest{model, version, {"input", {1}, {1.0f}}};
+}
+
+} // namespace
+
 TEST(BatchManagerTest, OneRequestFormsBatchAfterTimeout) {
     RequestQueue queue;
     MetricsRegistry metrics;
     BatchManager batchManager(queue, metrics, 8, std::chrono::milliseconds(10));
 
-    queue.push(PredictionRequest{"sentiment", "v1", "this movie was great"});
+    queue.push(makeRequest("sentiment", "v1"));
     std::optional<PredictionBatch> batch = batchManager.getBatch();
 
     ASSERT_TRUE(batch.has_value());
@@ -30,10 +38,10 @@ TEST(BatchManagerTest, MaxBatchSizeFormsFullBatch) {
     MetricsRegistry metrics;
     BatchManager batchManager(queue, metrics, 3, std::chrono::milliseconds(100));
 
-    queue.push(PredictionRequest{"sentiment", "v1", "request 1"});
-    queue.push(PredictionRequest{"sentiment", "v1", "request 2"});
-    queue.push(PredictionRequest{"sentiment", "v1", "request 3"});
-    queue.push(PredictionRequest{"sentiment", "v1", "request 4"});
+    queue.push(makeRequest("sentiment", "v1"));
+    queue.push(makeRequest("sentiment", "v1"));
+    queue.push(makeRequest("sentiment", "v1"));
+    queue.push(makeRequest("sentiment", "v1"));
 
     std::optional<PredictionBatch> batch = batchManager.getBatch();
 
@@ -50,9 +58,9 @@ TEST(BatchManagerTest, IncompatibleRequestStaysInRequestQueue) {
     MetricsRegistry metrics;
     BatchManager batchManager(queue, metrics, 8, std::chrono::milliseconds(100));
 
-    queue.push(PredictionRequest{"sentiment", "v1", "a1"});
-    queue.push(PredictionRequest{"sentiment", "v1", "a2"});
-    queue.push(PredictionRequest{"fraud", "v1", "b1"});
+    queue.push(makeRequest("sentiment", "v1"));
+    queue.push(makeRequest("sentiment", "v1"));
+    queue.push(makeRequest("fraud", "v1"));
 
     std::optional<PredictionBatch> batch = batchManager.getBatch();
 
